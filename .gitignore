@@ -1,0 +1,17 @@
+.vscode-server
+.ssh
+.gnupg
+.dotnet
+.cache
+.local
+.config
+.gitconfig
+.claude.json
+.claude.json.*
+.claude
+.npm
+.rustup
+.python_history
+.cargo
+target
+node_modules

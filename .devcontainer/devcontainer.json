@@ -1,0 +1,32 @@
+{
+  "name": "Rust Dev",
+  "image": "node-dev-lts",
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/src,type=bind"
+  ],
+  "workspaceFolder": "/src",
+  "containerEnv": {
+    "HISTFILE": "/dev/null",
+    "HOME": "/src",
+    "CARGO_HOME": "/src/.cargo",
+    "RUSTUP_HOME": "/src/.rustup"
+  },
+  "runArgs": [
+    "--network=host",
+    "--user", "1000:1000",
+    "--rm"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vue.volar",
+        "ms-vscode.vscode-typescript-next",
+        "nomicfoundation.hardhat-solidity"
+      ],
+      "settings": {
+        "telemetry.telemetryLevel": "off"
+      }
+    }
+  },
+  "remoteUser": "1000"
+}
