@@ -199,7 +199,7 @@ contract Dorp {
 
         // Update leaves
         uint256 lc = in_updates.length;
-        bytes32 transcript = keccak256(abi.encodePacked(lc));
+        bytes32 transcript = keccak256(abi.encode(in_opStart, in_opCount, lc));
         for( uint256 i = 0; i < lc; i++ ) {
             Leaf calldata leaf = in_updates[i];
             transcript = keccak256(abi.encode(transcript, m_leaves[leaf.idx], leaf));
@@ -209,20 +209,22 @@ contract Dorp {
         // Insert new users
         uint32 nul = uint32(in_newUsers.length);
         uint32 uc = counters.userCount;
-        transcript = keccak256(abi.encodePacked(transcript, uc, nul));
+        transcript = keccak256(abi.encode(transcript, uc, nul));
         for( uint32 i = 0; i < nul; i++ )
         {
             uint32 nui = uc+i;
-            transcript = keccak256(abi.encodePacked(transcript, nui, in_newUsers[i]));
+            transcript = keccak256(abi.encode(transcript, nui, in_newUsers[i]));
             m_userIndices[in_newUsers[i]] = nui;
         }
         counters.userCount += nul;
 
         // Perform payouts
         uint256 pc = in_pay.length;
+        transcript = keccak256(abi.encode(transcript, pc));
         for( uint256 i = 0; i < pc; i++ )
         {
             Payout calldata p = in_pay[i];
+            transcript = keccak256(abi.encode(transcript, p));
             // Failure paranoia, anything fails, just say we tried our best, owner can fetch it later
             if (!_safeTransfer(p.toWho, p.amount)) {
                 m_failedWithdraw[p.toWho] += p.amount;

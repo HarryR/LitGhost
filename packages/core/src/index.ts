@@ -1,12 +1,31 @@
-export function greet(name: string): string {
-  return `Hello, ${name}!`
-}
+// Crypto utilities
+export {
+  type DepositTo,
+  type Leaf,
+  blindUserId,
+  unblindUserId,
+  createDepositTo,
+  decryptDepositTo,
+  encryptBalance,
+  decryptBalance,
+  encryptLeaf,
+  decryptLeafBalance,
+  getUserLeafInfo
+} from './crypto';
 
-export function add(a: number, b: number): number {
-  return a + b
-}
+// Transcript utilities
+export {
+  type Payout,
+  type UpdateBatch,
+  computeTranscript,
+  createEmptyLeaf
+} from './transcript';
 
-export default {
-  greet,
-  add
-}
+// Utility functions
+export {
+  encodeUint32,
+  decodeUint32,
+  xorBytes,
+  createNamespacedKey,
+  computeSharedSecret
+} from './utils';
