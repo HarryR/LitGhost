@@ -1,0 +1,16 @@
+{
+  "include": ["src", "tasks", "scripts", "test"],
+  "files": ["hardhat.config.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2020",
+    "outDir": "lib/esm"
+  },
+  "ignoreDeprecations": "6.0"
+}

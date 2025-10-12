@@ -1,0 +1,45 @@
+{
+  "private": true,
+  "name": "@monorepo/contracts",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "main": "./lib/cjs/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=10"
+  },
+  "files": [
+    "contracts",
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "dependencies": {
+    "ethers": "^6.10.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.5",
+    "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@nomicfoundation/hardhat-verify": "^2.1.0",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^4.3.11",
+    "@types/ejs": "^3.1.5",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.5",
+    "canonicalize": "^2.1.0",
+    "chai": "^4.5.0",
+    "ejs": "^3.1.6",
+    "hardhat": "^2.19.4",
+    "hardhat-tracer": "^3.1.0",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^5.3.3"
+  }
+}
