@@ -1,7 +1,9 @@
-import * as ed25519 from '@noble/ed25519';
 import { keccak256 } from '@ethersproject/keccak256';
 import { arrayify, concat } from '@ethersproject/bytes';
-import { encodeUint32, decodeUint32, xorBytes, createNamespacedKey, computeSharedSecret } from './utils';
+import { encodeUint32, decodeUint32, xorBytes, randomKeypair, createNamespacedKey, computeSharedSecret } from './utils';
+
+const NAMESPACE_DEPOSIT = 'dorp.deposit';
+const NAMESPACE_BALANCE = 'dorp.balance';
 
 /**
  * Types
@@ -23,11 +25,10 @@ export interface Leaf {
  */
 export function blindUserId(
   telegramId: string,
-  sharedSecret: Uint8Array,
-  namespace: string = 'dorp.deposit'
+  sharedSecret: Uint8Array
 ): Uint8Array {
   const userIdHash = arrayify(keccak256(Buffer.from(telegramId, 'utf8')));
-  const blindingKey = createNamespacedKey(sharedSecret, namespace);
+  const blindingKey = createNamespacedKey(sharedSecret, NAMESPACE_DEPOSIT);
   return xorBytes(userIdHash, blindingKey);
 }
 
@@ -38,10 +39,9 @@ export function blindUserId(
  */
 export function unblindUserId(
   blindedUserId: Uint8Array,
-  sharedSecret: Uint8Array,
-  namespace: string = 'dorp.deposit'
+  sharedSecret: Uint8Array
 ): Uint8Array {
-  const blindingKey = createNamespacedKey(sharedSecret, namespace);
+  const blindingKey = createNamespacedKey(sharedSecret, NAMESPACE_DEPOSIT);
   return xorBytes(blindedUserId, blindingKey);
 }
 
@@ -51,19 +51,17 @@ export function unblindUserId(
  */
 export async function createDepositTo(
   telegramId: string,
-  teePublicKey: Uint8Array,
-  namespace: string = 'dorp.deposit'
+  teePublicKey: Uint8Array
 ): Promise<{ depositTo: DepositTo; ephemeralPrivateKey: Uint8Array }> {
-  const ephemeralPrivateKey = ed25519.utils.randomSecretKey();
-  const ephemeralPublicKey = await ed25519.getPublicKeyAsync(ephemeralPrivateKey);
-  const sharedSecret = computeSharedSecret(ephemeralPrivateKey, teePublicKey);
-  const blindedUserId = blindUserId(telegramId, sharedSecret, namespace);
+  const kp = await randomKeypair();
+  const sharedSecret = computeSharedSecret(kp.privateKey, teePublicKey);
+  const blindedUserId = blindUserId(telegramId, sharedSecret);
   return {
     depositTo: {
-      rand: ephemeralPublicKey,
+      rand: kp.publicKey,
       user: blindedUserId
     },
-    ephemeralPrivateKey
+    ephemeralPrivateKey: kp.privateKey
   };
 }
 
@@ -73,11 +71,10 @@ export async function createDepositTo(
  */
 export function decryptDepositTo(
   depositTo: DepositTo,
-  teeLongTermPrivateKey: Uint8Array,
-  namespace: string = 'dorp.deposit'
+  teeLongTermPrivateKey: Uint8Array
 ): Uint8Array {
   const sharedSecret = computeSharedSecret(teeLongTermPrivateKey, depositTo.rand);
-  return unblindUserId(depositTo.user, sharedSecret, namespace);
+  return unblindUserId(depositTo.user, sharedSecret);
 }
 
 /**
@@ -88,7 +85,7 @@ export function encryptBalance(
   sharedSecret: Uint8Array
 ): Uint8Array {
   const balanceBytes = encodeUint32(balance);
-  const encryptionKey = createNamespacedKey(sharedSecret, 'dorp.balance');
+  const encryptionKey = createNamespacedKey(sharedSecret, NAMESPACE_BALANCE);
   return xorBytes(balanceBytes, encryptionKey.slice(0, 4));
 }
 
@@ -100,7 +97,7 @@ export function decryptBalance(
   encryptedBalance: Uint8Array,
   sharedSecret: Uint8Array
 ): number {
-  const decryptionKey = createNamespacedKey(sharedSecret, 'dorp.balance');
+  const decryptionKey = createNamespacedKey(sharedSecret, NAMESPACE_BALANCE);
   const balanceBytes = xorBytes(encryptedBalance, decryptionKey.slice(0, 4));
   return decodeUint32(balanceBytes);
 }

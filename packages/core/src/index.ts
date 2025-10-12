@@ -27,5 +27,6 @@ export {
   decodeUint32,
   xorBytes,
   createNamespacedKey,
-  computeSharedSecret
+  computeSharedSecret,
+  randomKeypair
 } from './utils';

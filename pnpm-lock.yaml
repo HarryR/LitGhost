@@ -78,10 +78,22 @@ importers:
 
   packages/onchain:
     dependencies:
+      '@monorepo/core':
+        specifier: workspace:*
+        version: link:../core
       ethers:
         specifier: ^6.10.0
         version: 6.15.0
     devDependencies:
+      '@ethersproject/abi':
+        specifier: ^5.8.0
+        version: 5.8.0
+      '@ethersproject/bytes':
+        specifier: ^5.8.0
+        version: 5.8.0
+      '@ethersproject/keccak256':
+        specifier: ^5.8.0
+        version: 5.8.0
       '@nomicfoundation/hardhat-chai-matchers':
         specifier: ^2.1.0
         version: 2.1.0(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@20.19.19)(typescript@5.9.3))(typescript@5.9.3)))(chai@4.5.0)(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@20.19.19)(typescript@5.9.3))(typescript@5.9.3))
@@ -97,6 +109,9 @@ importers:
       '@nomicfoundation/hardhat-verify':
         specifier: ^2.1.0
         version: 2.1.1(hardhat@2.26.3(ts-node@10.9.2(@types/node@20.19.19)(typescript@5.9.3))(typescript@5.9.3))
+      '@openzeppelin/contracts':
+        specifier: ^5.4.0
+        version: 5.4.0
       '@typechain/ethers-v6':
         specifier: ^0.5.1
         version: 0.5.1(ethers@6.15.0)(typechain@8.3.2(typescript@5.9.3))(typescript@5.9.3)
@@ -647,6 +662,9 @@ packages:
   '@nomicfoundation/solidity-analyzer@0.1.2':
     resolution: {integrity: sha512-q4n32/FNKIhQ3zQGGw5CvPF6GTvDCpYwIf7bEY/dZTZbgfDsHyjJwURxUJf3VQuuJj+fDIFl4+KkBVbw4Ef6jA==}
     engines: {node: '>= 12'}
+
+  '@openzeppelin/contracts@5.4.0':
+    resolution: {integrity: sha512-eCYgWnLg6WO+X52I16TZt8uEjbtdkgLC0SUX/xnAksjjrQI4Xfn4iBRoI5j55dmlOhDv1Y7BoR3cU7e3WWhC6A==}
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -3616,6 +3634,8 @@ snapshots:
       '@nomicfoundation/solidity-analyzer-linux-x64-gnu': 0.1.2
       '@nomicfoundation/solidity-analyzer-linux-x64-musl': 0.1.2
       '@nomicfoundation/solidity-analyzer-win32-x64-msvc': 0.1.2
+
+  '@openzeppelin/contracts@5.4.0': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true

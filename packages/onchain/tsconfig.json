@@ -10,7 +10,11 @@
     "sourceMap": true,
     "strict": true,
     "target": "es2020",
-    "outDir": "lib/esm"
+    "outDir": "lib/esm",
+    "baseUrl": ".",
+    "paths": {
+      "@monorepo/core": ["../core/dist/index.d.ts"]
+    }
   },
   "ignoreDeprecations": "6.0"
 }

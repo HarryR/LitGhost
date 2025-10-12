@@ -2,6 +2,17 @@ import { defaultAbiCoder } from '@ethersproject/abi';
 import { arrayify, concat } from '@ethersproject/bytes';
 import { keccak256 } from '@ethersproject/keccak256';
 import * as ed25519 from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha2.js';
+
+// Set the SHA-512 hash function for ed25519 v3 (required for Node.js)
+ed25519.hashes.sha512 = sha512;
+ed25519.hashes.sha512Async = (m: Uint8Array) => Promise.resolve(sha512(m));
+
+export async function randomKeypair() {
+  const privateKey = ed25519.utils.randomSecretKey();
+  const publicKey = await ed25519.getPublicKeyAsync(privateKey);
+  return {privateKey, publicKey};
+}
 
 /**
  * Compute ECDH shared secret using ed25519

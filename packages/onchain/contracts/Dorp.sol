@@ -90,11 +90,11 @@ contract Dorp {
     }
 
     function getStatus()
-        public view returns (uint64 opCount, uint64 processedOps)
+        public view returns (OpCounters memory counters, uint256 dust)
     {
-        opCount = m_counters.opCount;
+        counters = m_counters;
 
-        processedOps = m_counters.processedOps;
+        dust = m_dust;
     }
 
     function _convertToTwoDecimals(uint256 amount, uint8 inputDecimals)
