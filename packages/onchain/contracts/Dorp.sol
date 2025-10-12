@@ -179,7 +179,7 @@ contract Dorp {
 
         _finishDeposit(to, auth.value);
     }
-
+    
     function doUpdate(
         uint64 in_opStart,
         uint64 in_opCount,
@@ -190,6 +190,8 @@ contract Dorp {
     )
         public
     {
+        // NOTE: any changes to the transcript also need modifying in packages/core/src/transcript.ts
+
         require( msg.sender == m_owner, "403" );
 
         // Load counters into memory

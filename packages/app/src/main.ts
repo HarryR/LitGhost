@@ -1,9 +1,22 @@
 import { createApp } from 'vue'
-import App from './App.vue'
 
-import { init } from '@telegram-apps/sdk-vue';
-init();
-import { initData  } from '@telegram-apps/sdk-vue';
-initData.restore();
+// Detect if running in Telegram environment
+const isTelegram = window.Telegram?.WebApp !== undefined
 
-createApp(App).mount('#app')
+async function initApp() {
+  if (isTelegram) {
+    // Initialize Telegram SDK only when in Telegram
+    const { init, initData } = await import('@telegram-apps/sdk-vue')
+    init()
+    initData.restore()
+
+    const { default: TelegramMiniApp } = await import('./TelegramMiniApp.vue')
+    createApp(TelegramMiniApp).mount('#app')
+  } else {
+    // Mount web app for browser usage
+    const { default: WebApp } = await import('./WebApp.vue')
+    createApp(WebApp).mount('#app')
+  }
+}
+
+initApp()

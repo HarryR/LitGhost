@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter ./packages/* dev",
-    "build": "pnpm --filter ./packages/* build"
+    "dev": "pnpm --filter './packages/*' run dev",
+    "build": "pnpm --filter './packages/*' run build",
+    "test": "pnpm --filter './packages/*' run test",
+    "typecheck": "pnpm --filter @monorepo/core exec tsc --noEmit && pnpm --filter @monorepo/app exec vue-tsc --noEmit",
+    "validate": "pnpm build && pnpm test && pnpm typecheck"
   }
 }

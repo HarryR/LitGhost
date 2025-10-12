@@ -8,3 +8,10 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// Telegram WebApp types
+interface Window {
+  Telegram?: {
+    WebApp?: unknown
+  }
+}

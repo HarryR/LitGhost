@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "@monorepo/contracts",
+  "name": "@monorepo/onchain",
   "version": "1.0.0",
   "license": "AGPL-3.0-only",
   "main": "./lib/cjs/index.js",
