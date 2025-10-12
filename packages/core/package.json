@@ -4,23 +4,38 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./sandboxed": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/sandboxed.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist"
+    "build": "vite build && vite build --mode sandboxed && tsc --emitDeclarationOnly --declaration --outDir dist"
   },
   "devDependencies": {
+    "@ethersproject/abi": "^5.8.0",
+    "@ethersproject/bytes": "^5.8.0",
+    "@ethersproject/keccak256": "^5.8.0",
+    "@ethersproject/random": "^5.8.0",
+    "@ethersproject/signing-key": "^5.8.0",
     "@types/node": "^24.7.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.5"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@ethersproject/abi": "^5.8.0",
     "@ethersproject/bytes": "^5.8.0",
     "@ethersproject/keccak256": "^5.8.0",
-    "@noble/ed25519": "^3.0.0",
-    "@noble/hashes": "^2.0.1"
+    "@ethersproject/random": "^5.8.0",
+    "@ethersproject/signing-key": "^5.8.0"
   }
 }

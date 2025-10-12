@@ -56,7 +56,7 @@ const config: HardhatUserConfig = {
     ],
   },
   typechain: {
-    target: 'ethers-v5',
+    target: 'ethers-v6',
     outDir: 'src/contracts',
   },
   mocha: {

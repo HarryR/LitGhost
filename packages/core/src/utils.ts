@@ -1,34 +1,47 @@
-import { defaultAbiCoder } from '@ethersproject/abi';
-import { arrayify, concat } from '@ethersproject/bytes';
-import { keccak256 } from '@ethersproject/keccak256';
-import * as ed25519 from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha2.js';
+import { defaultAbiCoder, arrayify, concat, keccak256, SigningKey, randomBytes, hexlify } from './ethers-compat.js';
 
-// Set the SHA-512 hash function for ed25519 v3 (required for Node.js)
-ed25519.hashes.sha512 = sha512;
-ed25519.hashes.sha512Async = (m: Uint8Array) => Promise.resolve(sha512(m));
+/**
+ * Generate a random secp256k1 keypair with even y-coordinate
+ * This allows us to use 32-byte public keys (x-coordinate only)
+ * by enforcing a convention that all keys have even y (0x02 prefix)
+ */
+export function randomKeypair() {
+  while (true) {
+    const privateKeyBytes = randomBytes(32);
+    const signingKey = new SigningKey(privateKeyBytes);
+    const compressed = signingKey.compressedPublicKey; // "0x02..." or "0x03..."
 
-export async function randomKeypair() {
-  const privateKey = ed25519.utils.randomSecretKey();
-  const publicKey = await ed25519.getPublicKeyAsync(privateKey);
-  return {privateKey, publicKey};
+    if (compressed.startsWith('0x02')) {
+      // Even y-coordinate - return x-coordinate only (32 bytes)
+      return {
+        privateKey: privateKeyBytes,
+        publicKey: arrayify('0x' + compressed.slice(4)) // Remove "0x02" prefix
+      };
+    }
+    // Odd y-coordinate, try again
+  }
 }
 
 /**
- * Compute ECDH shared secret using ed25519
- * Uses scalar multiplication: sharedSecret = privateKey * publicKey
+ * Reconstruct a compressed public key from a 32-byte x-coordinate
+ * Assumes even y-coordinate (0x02 prefix) per our convention
+ */
+export function reconstructCompressedPublicKey(xCoordinate: Uint8Array): string {
+  if (xCoordinate.length !== 32) {
+    throw new Error('Expected 32-byte x-coordinate');
+  }
+  return '0x02' + hexlify(xCoordinate).slice(2);
+}
+
+/**
+ * Compute ECDH shared secret using secp256k1
+ * Takes private key and 32-byte public key (x-coordinate only)
  */
 export function computeSharedSecret(privateKey: Uint8Array, publicKey: Uint8Array): Uint8Array {
-  // Get the scalar from the private key (first 32 bytes of extended key)
-  const extKey = ed25519.utils.getExtendedPublicKey(privateKey);
-  const scalar = extKey.scalar;
-
-  // Multiply the public key point by the scalar
-  const pubPoint = ed25519.Point.fromBytes(publicKey);
-  const sharedPoint = pubPoint.multiply(scalar);
-
-  // Return the shared secret as bytes
-  return sharedPoint.toBytes();
+  const signingKey = new SigningKey(privateKey);
+  const compressedPublicKey = reconstructCompressedPublicKey(publicKey);
+  const sharedSecretHex = signingKey.computeSharedSecret(compressedPublicKey);
+  return arrayify(sharedSecretHex);
 }
 
 /**

@@ -1,30 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "./IERC3009.sol";
 
 /**
  * @title MockToken
- * @dev Mock ERC20 token with ERC2612 (Permit) and ERC3009 (TransferWithAuthorization) support
+ * @dev Mock ERC20 token with ERC3009 (TransferWithAuthorization) support
  * Used for testing the Dorp contract
  */
-contract MockToken is ERC20Permit {
+contract MockToken is ERC20, EIP712, IERC3009 {
     uint8 private immutable _decimals;
 
     // ERC3009: Track used authorizations
     mapping(address => mapping(bytes32 => bool)) private _authorizationStates;
 
-    // ERC3009: Type hash for transferWithAuthorization
-    bytes32 private constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH =
-        0x7c7c6cdb67a18743f49ec6fa9b35f50d52ed05cbed4cc592e13b44501c1a2267;
-
-    event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce);
-
     constructor(
         string memory name,
         string memory symbol,
         uint8 decimals_
-    ) ERC20(name, symbol) ERC20Permit(name) {
+    ) ERC20(name, symbol) EIP712(name, "1") {
         _decimals = decimals_;
     }
 
@@ -62,6 +59,45 @@ contract MockToken is ERC20Permit {
         bytes32 structHash = keccak256(
             abi.encode(
                 TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
+                from,
+                to,
+                value,
+                validAfter,
+                validBefore,
+                nonce
+            )
+        );
+
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address signer = ECDSA.recover(digest, v, r, s);
+        require(signer == from, "Invalid signature");
+
+        _authorizationStates[from][nonce] = true;
+        emit AuthorizationUsed(from, nonce);
+
+        _transfer(from, to, value);
+    }
+
+    // ERC3009: Receive with authorization
+    function receiveWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(to == msg.sender, "Caller must be the payee");
+        require(block.timestamp > validAfter, "Authorization not yet valid");
+        require(block.timestamp < validBefore, "Authorization expired");
+        require(!_authorizationStates[from][nonce], "Authorization already used");
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                RECEIVE_WITH_AUTHORIZATION_TYPEHASH,
                 from,
                 to,
                 value,

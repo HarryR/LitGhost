@@ -1,5 +1,4 @@
-import { keccak256 } from '@ethersproject/keccak256';
-import { arrayify, concat } from '@ethersproject/bytes';
+import { keccak256, arrayify, concat } from './ethers-compat.js';
 import { encodeUint32, decodeUint32, xorBytes, randomKeypair, createNamespacedKey, computeSharedSecret } from './utils';
 
 const NAMESPACE_DEPOSIT = 'dorp.deposit';

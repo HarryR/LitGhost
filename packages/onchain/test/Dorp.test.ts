@@ -28,7 +28,7 @@ import { arrayify } from "@ethersproject/bytes";
  * - TEE can decrypt deposit recipients using ephemeral keys
  * - Balance encryption with nonces matches expected behavior
  * - Transcript hashing (using computeTranscript) matches Solidity implementation
- * - ERC20, ERC2612 (permit), and ERC3009 (transferWithAuthorization) deposit flows
+ * - ERC20 and ERC3009 (transferWithAuthorization) deposit flows
  * - Encrypted leaf updates and payout processing
  */
 describe("Dorp Contract", function () {
@@ -142,70 +142,8 @@ describe("Dorp Contract", function () {
     });
   });
 
-  describe("depositERC2612", function () {
-    it("Should accept deposit with ERC2612 permit signature", async function () {
-      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
-      const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
-
-      const { depositTo } = await createDepositTo("user456", teeKeypair.publicKey);
-      const depositToSol = {
-        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
-        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
-      };
-
-      // Get permit signature
-      const nonce = await token.nonces(user1.address);
-      const domain = {
-        name: await token.name(),
-        version: "1",
-        chainId: (await ethers.provider.getNetwork()).chainId,
-        verifyingContract: await token.getAddress(),
-      };
-
-      const types = {
-        Permit: [
-          { name: "owner", type: "address" },
-          { name: "spender", type: "address" },
-          { name: "value", type: "uint256" },
-          { name: "nonce", type: "uint256" },
-          { name: "deadline", type: "uint256" },
-        ],
-      };
-
-      const value = {
-        owner: user1.address,
-        spender: await dorp.getAddress(),
-        value: depositAmount,
-        nonce: nonce,
-        deadline: deadline,
-      };
-
-      const signature = await user1.signTypedData(domain, types, value);
-      const sig = ethers.Signature.from(signature);
-
-      const permit = {
-        owner: user1.address,
-        value: depositAmount,
-        deadline: deadline,
-        sig: {
-          v: sig.v,
-          r: sig.r,
-          s: sig.s,
-        },
-      };
-
-      // Deposit using permit (no prior approval needed)
-      const tx = await dorp.connect(user1).depositERC2612(depositToSol, permit);
-      await tx.wait();
-
-      // Verify deposit succeeded
-      const status = await dorp.getStatus();
-      expect(status.counters.opCount).to.equal(1);
-    });
-  });
-
   describe("depositERC3009", function () {
-    it("Should accept deposit with ERC3009 transferWithAuthorization", async function () {
+    it("Should accept deposit with ERC3009 receiveWithAuthorization", async function () {
       const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
       const validAfter = 0;
       const validBefore = Math.floor(Date.now() / 1000) + 3600;
@@ -218,8 +156,8 @@ describe("Dorp Contract", function () {
 
       // Nonce is hash of depositTo struct (as per contract)
       const nonceBytes = ethers.solidityPackedKeccak256(
-        ["bytes32", "bytes32"],
-        [depositToSol.rand, depositToSol.user]
+        ["bytes32", "bytes32", "uint256"],
+        [depositToSol.rand, depositToSol.user, 0]
       );
 
       const domain = {
@@ -230,7 +168,7 @@ describe("Dorp Contract", function () {
       };
 
       const types = {
-        TransferWithAuthorization: [
+        ReceiveWithAuthorization: [
           { name: "from", type: "address" },
           { name: "to", type: "address" },
           { name: "value", type: "uint256" },
@@ -264,8 +202,8 @@ describe("Dorp Contract", function () {
         },
       };
 
-      // Deposit using ERC3009
-      const tx = await dorp.connect(user2).depositERC3009(depositToSol, auth);
+      // Deposit using ERC3009 - only the Dorp contract (receiver) can call this
+      const tx = await dorp.connect(user2)['depositERC3009((bytes32,bytes32),(address,uint256,uint256,uint256,(uint8,bytes32,bytes32)))'](depositToSol, auth);
       await tx.wait();
 
       // Verify deposit succeeded

@@ -1,6 +1,4 @@
-import { keccak256 } from '@ethersproject/keccak256';
-import { defaultAbiCoder } from '@ethersproject/abi';
-import { arrayify, hexlify } from '@ethersproject/bytes';
+import { keccak256, defaultAbiCoder, arrayify, hexlify } from './ethers-compat.js';
 import type { Leaf } from './crypto';
 
 /**

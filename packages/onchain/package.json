@@ -19,13 +19,15 @@
     "test": "hardhat test"
   },
   "dependencies": {
-    "ethers": "^6.10.0",
-    "@monorepo/core": "workspace:*"
+    "@monorepo/core": "workspace:*",
+    "ethers": "^6.10.0"
   },
   "devDependencies": {
     "@ethersproject/abi": "^5.8.0",
     "@ethersproject/bytes": "^5.8.0",
     "@ethersproject/keccak256": "^5.8.0",
+    "@ethersproject/random": "^5.8.0",
+    "@ethersproject/signing-key": "^5.8.0",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
     "@nomicfoundation/hardhat-network-helpers": "^1.1.0",

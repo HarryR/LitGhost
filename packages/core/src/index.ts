@@ -28,5 +28,6 @@ export {
   xorBytes,
   createNamespacedKey,
   computeSharedSecret,
-  randomKeypair
+  randomKeypair,
+  reconstructCompressedPublicKey
 } from './utils';
