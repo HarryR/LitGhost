@@ -21,7 +21,8 @@
       "extensions": [
         "vue.volar",
         "ms-vscode.vscode-typescript-next",
-        "nomicfoundation.hardhat-solidity"
+        "nomicfoundation.hardhat-solidity",
+        "bradlc.vscode-tailwindcss"
       ],
       "settings": {
         "telemetry.telemetryLevel": "off"

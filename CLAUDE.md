@@ -80,6 +80,14 @@ pnpm validate             # Full CI validation (build + test + typecheck)
 pnpm --filter @monorepo/core build
 pnpm --filter @monorepo/app dev
 pnpm --filter @monorepo/onchain test
+
+# Installing packages
+pnpm add <package>                    # Add dependency
+pnpm add -D <package>                 # Add dev dependency
+pnpm add <package> --prefer-offline   # Prefer offline cache (faster, use this when possible)
+
+# Instead of npx, use `pnpm dlx`, e.g.
+pnpm dlx shadcn-vue@latest add card button badge separator
 ```
 
 ## Important Notes
