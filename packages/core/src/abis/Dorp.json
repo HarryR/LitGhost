@@ -20,6 +20,25 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint32",
+        "name": "idx",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "leaf",
+        "type": "bytes32"
+      }
+    ],
+    "name": "LeafChange",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "uint64",
         "name": "idx",
         "type": "uint64"
@@ -317,6 +336,42 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint32[]",
+        "name": "leafIndices",
+        "type": "uint32[]"
+      }
+    ],
+    "name": "getLeaves",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes4[6]",
+            "name": "encryptedBalances",
+            "type": "bytes4[6]"
+          },
+          {
+            "internalType": "uint32",
+            "name": "idx",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "nonce",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct Leaf[]",
+        "name": "leaves",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "getStatus",
     "outputs": [
@@ -346,6 +401,25 @@
         "internalType": "uint256",
         "name": "dust",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "encryptedUserIdList",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "getUserLeaves",
+    "outputs": [
+      {
+        "internalType": "uint32[]",
+        "name": "userLeafIndices",
+        "type": "uint32[]"
       }
     ],
     "stateMutability": "view",

@@ -19,29 +19,40 @@ export interface Leaf {
 }
 
 /**
- * Blind a user ID using XOR with hashed ECDH secret
- * Used for deposits to hide the real user ID
+ * Blind a telegram username using XOR with hashed ECDH secret
+ * Encrypts the plaintext username (zero-padded to 32 bytes) so the TEE can decrypt it
+ * and know who received the deposit
  */
 export function blindUserId(
   telegramId: string,
   sharedSecret: Uint8Array
 ): Uint8Array {
-  const userIdHash = arrayify(keccak256(Buffer.from(telegramId, 'utf8')));
+  // Zero-pad telegram username to 32 bytes
+  const usernameBytes = new Uint8Array(32);
+  const encoded = Buffer.from(telegramId, 'utf8');
+  if (encoded.length > 32) {
+    throw new Error('Telegram ID too long (max 32 bytes UTF-8)');
+  }
+  usernameBytes.set(encoded, 0);
+
   const blindingKey = createNamespacedKey(sharedSecret, NAMESPACE_DEPOSIT);
-  return xorBytes(userIdHash, blindingKey);
+  return xorBytes(usernameBytes, blindingKey);
 }
 
 /**
  * Unblind a user ID (TEE side)
- * Reverses the blinding operation to recover the original telegram ID hash
+ * Reverses the blinding operation to recover the plaintext telegram username
  * Note: XOR is symmetric, so unblinding uses the same operation as blinding
  */
 export function unblindUserId(
   blindedUserId: Uint8Array,
   sharedSecret: Uint8Array
-): Uint8Array {
+): string {
   const blindingKey = createNamespacedKey(sharedSecret, NAMESPACE_DEPOSIT);
-  return xorBytes(blindedUserId, blindingKey);
+  const usernameBytes = xorBytes(blindedUserId, blindingKey);
+
+  // Decode and strip null padding
+  return Buffer.from(usernameBytes).toString('utf8').replace(/\0+$/, '');
 }
 
 /**
@@ -66,12 +77,12 @@ export async function createDepositTo(
 
 /**
  * Decrypt a DepositTo (TEE side)
- * TEE uses its long-term private key to recover the telegram ID
+ * TEE uses its long-term private key to recover the plaintext telegram username
  */
 export function decryptDepositTo(
   depositTo: DepositTo,
   teeLongTermPrivateKey: Uint8Array
-): Uint8Array {
+): string {
   const sharedSecret = computeSharedSecret(teeLongTermPrivateKey, depositTo.rand);
   return unblindUserId(depositTo.user, sharedSecret);
 }

@@ -24,7 +24,8 @@ export interface UpdateBatch {
  */
 export function computeTranscript(
   batch: UpdateBatch,
-  oldLeaves: Map<number, Leaf>
+  oldLeaves: Map<number, Leaf>,
+  currentUserCount: number
 ): Uint8Array {
   // Initialize transcript: keccak256(abi.encode(in_opStart, in_opCount, lc))
   let transcript = arrayify(keccak256(
@@ -71,9 +72,8 @@ export function computeTranscript(
   }
 
   // Insert new users
-  const userCount = oldLeaves.size > 0
-    ? Math.max(...Array.from(oldLeaves.keys()).map(idx => idx * 6 + 5)) + 1
-    : 0;
+  // Use the current user count from the contract state
+  const userCount = currentUserCount;
 
   // keccak256(abi.encode(transcript, uc, nul))
   transcript = arrayify(keccak256(

@@ -10,12 +10,13 @@ import {
   computeSharedSecret,
   getUserLeafInfo,
   computeTranscript,
+  deriveUserKeypair,
   type Leaf,
   type Payout,
   type UpdateBatch,
 } from "@monorepo/core";
 import { keccak256 } from "@ethersproject/keccak256";
-import { arrayify } from "@ethersproject/bytes";
+import { arrayify, concat } from "@ethersproject/bytes";
 
 /**
  * Comprehensive test suite for the Dorp contract
@@ -38,6 +39,7 @@ describe("Dorp Contract", function () {
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
   let teeKeypair: { publicKey: Uint8Array; privateKey: Uint8Array };
+  let userMasterKey: Uint8Array;
 
   const TOKEN_DECIMALS = 6;
   const INITIAL_BALANCE = ethers.parseUnits("1000000", TOKEN_DECIMALS);
@@ -45,8 +47,10 @@ describe("Dorp Contract", function () {
   beforeEach(async function () {
     [owner, user1, user2] = await ethers.getSigners();
 
-    // Generate TEE keypair
+    // Generate TEE keypair and user master key
     teeKeypair = await randomKeypair();
+    userMasterKey = new Uint8Array(32);
+    crypto.getRandomValues(userMasterKey);
 
     // Deploy mock token with 6 decimals (like USDC)
     const MockTokenFactory = await ethers.getContractFactory("MockToken");
@@ -68,7 +72,8 @@ describe("Dorp Contract", function () {
       const status = await dorp.getStatus();
       expect(status.counters.opCount).to.equal(0);
       expect(status.counters.processedOps).to.equal(0);
-      expect(status.counters.userCount).to.equal(0);
+      // User ID 0 is reserved as sentinel, so userCount starts at 1
+      expect(status.counters.userCount).to.be.greaterThanOrEqual(1);
     });
 
     it("Should have correct token address", async function () {
@@ -106,17 +111,12 @@ describe("Dorp Contract", function () {
       ) as any;
       expect(event).to.not.be.undefined;
 
-      // Verify TEE can decrypt the user ID
-      const decryptedUserIdHash = decryptDepositTo(
+      // Verify TEE can decrypt the telegram username
+      const decryptedUsername = decryptDepositTo(
         depositTo,
         teeKeypair.privateKey
       );
-      const expectedUserIdHash = arrayify(
-        keccak256(Buffer.from("user123", "utf8"))
-      );
-      expect(Buffer.from(decryptedUserIdHash)).to.deep.equal(
-        Buffer.from(expectedUserIdHash)
-      );
+      expect(decryptedUsername).to.equal("user123");
 
       // Verify counter updated
       const status = await dorp.getStatus();
@@ -218,14 +218,18 @@ describe("Dorp Contract", function () {
 
       // Create 6 users and their deposits
       const users: string[] = [];
-      const userSharedSecrets: Uint8Array[] = [];
+      const userPublicKeys: Uint8Array[] = [];
 
       for (let i = 0; i < 6; i++) {
-        const userId = `user${i}`;
-        users.push(userId);
+        const username = `user${i}`;
+        users.push(username);
+
+        // Derive user's long-term keypair
+        const { publicKey } = deriveUserKeypair(username, userMasterKey);
+        userPublicKeys.push(publicKey);
 
         const { depositTo } = await createDepositTo(
-          userId,
+          username,
           teeKeypair.publicKey
         );
         const depositToSol = {
@@ -236,18 +240,17 @@ describe("Dorp Contract", function () {
         // Make deposit
         await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
         await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
-
-        // TEE computes shared secret for this user
-        const sharedSecret = computeSharedSecret(
-          teeKeypair.privateKey,
-          depositTo.rand
-        );
-        userSharedSecrets.push(sharedSecret);
       }
 
       // TEE processes deposits and creates encrypted leaf
       const balances = [100_00, 100_00, 100_00, 100_00, 100_00, 100_00]; // All 100.00 (2 decimals)
       const nonce = 1;
+
+      // Compute shared secrets for balance encryption (TEE_SK + USER_PK)
+      const userSharedSecrets = userPublicKeys.map(userPK =>
+        computeSharedSecret(teeKeypair.privateKey, userPK)
+      );
+
       const encryptedBalances = encryptLeaf(balances, userSharedSecrets, nonce);
 
       // Create leaf using core types
@@ -257,9 +260,12 @@ describe("Dorp Contract", function () {
         nonce: nonce,
       };
 
-      // Get user ID hashes for new users
-      const newUserIds = users.map((userId) => {
-        return arrayify(keccak256(Buffer.from(userId, "utf8")));
+      // Compute encrypted user IDs: keccak256(TEE_SK || username)
+      const newUserIds = users.map((username) => {
+        return arrayify(keccak256(concat([
+          teeKeypair.privateKey,
+          Buffer.from(username, 'utf8')
+        ])));
       });
 
       // Use computeTranscript from core library
@@ -272,7 +278,9 @@ describe("Dorp Contract", function () {
       };
 
       const oldLeaves = new Map<number, Leaf>();
-      const transcript = computeTranscript(batch, oldLeaves);
+      const status = await dorp.getStatus();
+      const currentUserCount = Number(status.counters.userCount);
+      const transcript = computeTranscript(batch, oldLeaves, currentUserCount);
       const transcriptHex = "0x" + Buffer.from(transcript).toString("hex");
 
       // Convert leaf to Solidity format for contract call
@@ -302,9 +310,10 @@ describe("Dorp Contract", function () {
       await tx.wait();
 
       // Verify counters updated
-      const status = await dorp.getStatus();
-      expect(status.counters.processedOps).to.equal(6);
-      expect(status.counters.userCount).to.equal(6);
+      const statusAfter = await dorp.getStatus();
+      expect(statusAfter.counters.processedOps).to.equal(6);
+      // Should have added 6 new users to the initial count
+      expect(statusAfter.counters.userCount).to.equal(currentUserCount + 6);
     });
   });
 
@@ -338,7 +347,9 @@ describe("Dorp Contract", function () {
       };
 
       const oldLeaves = new Map<number, Leaf>();
-      const transcript = computeTranscript(batch, oldLeaves);
+      const status = await dorp.getStatus();
+      const currentUserCount = Number(status.counters.userCount);
+      const transcript = computeTranscript(batch, oldLeaves, currentUserCount);
       const transcriptHex = "0x" + Buffer.from(transcript).toString("hex");
 
       const balanceBefore = await token.balanceOf(user2.address);

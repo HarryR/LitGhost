@@ -23,6 +23,46 @@ export function randomKeypair() {
 }
 
 /**
+ * Derive a deterministic secp256k1 keypair with even y-coordinate
+ * Used by the manager to derive user long-term keys from a master key
+ *
+ * @param seed - Base seed material (e.g., telegram username)
+ * @param masterKey - Master secret key for derivation
+ * @returns Keypair with 32-byte private key and 32-byte public key (x-coordinate only)
+ */
+export function deriveUserKeypair(
+  seed: string,
+  masterKey: Uint8Array
+): { privateKey: Uint8Array; publicKey: Uint8Array } {
+  let counter = 0;
+  const seedBytes = Buffer.from(seed, 'utf8');
+
+  while (true) {
+    // Derive candidate private key: keccak256(masterKey || seed || counter)
+    const material = concat([
+      masterKey,
+      seedBytes,
+      encodeUint32(counter)
+    ]);
+    const candidateSK = arrayify(keccak256(material));
+
+    const signingKey = new SigningKey(candidateSK);
+    const compressed = signingKey.compressedPublicKey;
+
+    if (compressed.startsWith('0x02')) {
+      // Even y-coordinate - return x-coordinate only (32 bytes)
+      return {
+        privateKey: candidateSK,
+        publicKey: arrayify('0x' + compressed.slice(4))
+      };
+    }
+
+    // Odd y-coordinate, increment counter and try again
+    counter++;
+  }
+}
+
+/**
  * Reconstruct a compressed public key from a 32-byte x-coordinate
  * Assumes even y-coordinate (0x02 prefix) per our convention
  */
@@ -51,6 +91,13 @@ export function encodeUint32(value: number): Uint8Array {
   const encoded = arrayify(defaultAbiCoder.encode(['uint32'], [value]));
   // ABI encoding pads to 32 bytes, we want the last 4
   return encoded.slice(-4);
+}
+
+/**
+ * Encode a number to uint256 bytes (32 bytes)
+ */
+export function encodeUint256(value: number | bigint): Uint8Array {
+  return arrayify(defaultAbiCoder.encode(['uint256'], [value]));
 }
 
 /**

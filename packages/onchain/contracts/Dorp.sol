@@ -47,6 +47,14 @@ struct OpCounters {
     uint32 userCount;
 }
 
+function packLeaf(Leaf memory leaf) pure returns (bytes32) {
+    return bytes32(abi.encodePacked(
+        leaf.encryptedBalances,
+        leaf.idx,
+        leaf.nonce
+    ));
+}
+
 contract Dorp {
 
     uint8 constant internal DECIMALS = 2;
@@ -69,6 +77,8 @@ contract Dorp {
 
     event OpDeposit(uint64 indexed idx, bytes32 randKey, bytes32 toUser, uint32 amount);
 
+    event LeafChange(uint32 indexed idx, bytes32 leaf);
+
     constructor(IERC20_With_Extensions in_token, address in_owner)
     {
         m_token = in_token;
@@ -76,6 +86,36 @@ contract Dorp {
         m_decimals = in_token.decimals();
 
         m_owner = in_owner;
+
+        // Initialize userCount to 1, treating user ID 0 as a sentinel value
+        // This allows us to distinguish "user doesn't exist" (returns 0) from actual users (>= 1)
+        m_counters.userCount = 1;
+    }
+
+    function getLeaves(uint32[] calldata leafIndices)
+        public view returns (Leaf[] memory leaves)
+    {
+        uint n = leafIndices.length;
+
+        leaves = new Leaf[](n);
+
+        for( uint i = 0; i < n; i++ )
+        {
+            leaves[i] = m_leaves[leafIndices[i]];
+        }
+    }
+
+    function getUserLeaves(bytes32[] calldata encryptedUserIdList)
+        public view returns (uint32[] memory userLeafIndices)
+    {
+        uint n = encryptedUserIdList.length;
+
+        userLeafIndices = new uint32[](n);
+
+        for( uint i = 0; i < n; i++ )
+        {
+            userLeafIndices[i] = m_userIndices[encryptedUserIdList[i]];
+        }
     }
 
     function decimals ()
@@ -218,6 +258,7 @@ contract Dorp {
             Leaf calldata leaf = in_updates[i];
             transcript = keccak256(abi.encode(transcript, m_leaves[leaf.idx], leaf));
             m_leaves[leaf.idx] = leaf;
+            emit LeafChange(leaf.idx, packLeaf(leaf));
         }
 
         // Insert new users
