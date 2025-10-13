@@ -1,0 +1,373 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "contract IERC20_With_Extensions",
+        "name": "in_token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "in_owner",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "idx",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "randKey",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "toUser",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "amount",
+        "type": "uint32"
+      }
+    ],
+    "name": "OpDeposit",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "collectDust",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "rand",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "user",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct DepositTo",
+        "name": "to",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "in_amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "depositERC20",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "rand",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "user",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct DepositTo",
+        "name": "to",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "from",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validAfter",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validBefore",
+            "type": "uint256"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "v",
+                "type": "uint8"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "r",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "s",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct Signature",
+            "name": "sig",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct Auth3009",
+        "name": "auth",
+        "type": "tuple"
+      }
+    ],
+    "name": "depositERC3009",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "rand",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "user",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct DepositTo",
+        "name": "to",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "from",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validAfter",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validBefore",
+            "type": "uint256"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "v",
+                "type": "uint8"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "r",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "s",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct Signature",
+            "name": "sig",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct Auth3009",
+        "name": "auth",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "callerIncentive",
+        "type": "uint256"
+      }
+    ],
+    "name": "depositERC3009",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "in_opStart",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "in_opCount",
+        "type": "uint64"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes4[6]",
+            "name": "encryptedBalances",
+            "type": "bytes4[6]"
+          },
+          {
+            "internalType": "uint32",
+            "name": "idx",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "nonce",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct Leaf[]",
+        "name": "in_updates",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "in_newUsers",
+        "type": "bytes32[]"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "toWho",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct Payout[]",
+        "name": "in_pay",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "in_transcript",
+        "type": "bytes32"
+      }
+    ],
+    "name": "doUpdate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getStatus",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "opCount",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "processedOps",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "userCount",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct OpCounters",
+        "name": "counters",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "dust",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "in_to",
+        "type": "address"
+      }
+    ],
+    "name": "handleFailedWithdraw",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

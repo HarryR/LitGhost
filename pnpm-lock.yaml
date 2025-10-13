@@ -84,6 +84,9 @@ importers:
       '@ethersproject/bytes':
         specifier: ^5.8.0
         version: 5.8.0
+      '@ethersproject/contracts':
+        specifier: ^5.8.0
+        version: 5.8.0
       '@ethersproject/keccak256':
         specifier: ^5.8.0
         version: 5.8.0
@@ -118,13 +121,22 @@ importers:
       '@ethersproject/bytes':
         specifier: ^5.8.0
         version: 5.8.0
+      '@ethersproject/contracts':
+        specifier: ^5.8.0
+        version: 5.8.0
       '@ethersproject/keccak256':
         specifier: ^5.8.0
         version: 5.8.0
+      '@ethersproject/providers':
+        specifier: ^5.8.0
+        version: 5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@ethersproject/random':
         specifier: ^5.8.0
         version: 5.8.0
       '@ethersproject/signing-key':
+        specifier: ^5.8.0
+        version: 5.8.0
+      '@ethersproject/wallet':
         specifier: ^5.8.0
         version: 5.8.0
       '@nomicfoundation/hardhat-chai-matchers':

@@ -31,3 +31,8 @@ export {
   randomKeypair,
   reconstructCompressedPublicKey
 } from './utils';
+
+export {
+  Dorp,
+  Token
+} from './contracts';

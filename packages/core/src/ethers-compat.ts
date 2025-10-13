@@ -10,3 +10,4 @@ export { arrayify, concat, hexlify } from '@ethersproject/bytes';
 export { defaultAbiCoder } from '@ethersproject/abi';
 export { SigningKey } from '@ethersproject/signing-key';
 export { randomBytes } from '@ethersproject/random';
+export { Contract } from '@ethersproject/contracts';

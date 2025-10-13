@@ -32,6 +32,7 @@ export default defineConfig(({ mode }) => {
           '@ethersproject/keccak256',
           '@ethersproject/random',
           '@ethersproject/signing-key',
+          '@ethersproject/contracts',
         ],
         output: {
           inlineDynamicImports: true
@@ -39,4 +40,4 @@ export default defineConfig(({ mode }) => {
       }
     }
   }
-})
+});

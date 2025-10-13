@@ -21,3 +21,4 @@ export const hexlify = globalEthers.utils.hexlify;
 export const defaultAbiCoder = globalEthers.utils.defaultAbiCoder;
 export const SigningKey = globalEthers.utils.SigningKey;
 export const randomBytes = globalEthers.utils.randomBytes;
+export const Contract = globalEthers.Contract;

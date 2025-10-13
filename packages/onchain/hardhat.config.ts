@@ -4,6 +4,7 @@ import '@nomicfoundation/hardhat-chai-matchers';
 import "@nomicfoundation/hardhat-verify";
 import '@typechain/hardhat';
 import { HardhatUserConfig, vars } from 'hardhat/config';
+import './tasks/compile';
 
 const config: HardhatUserConfig = {
   networks: {

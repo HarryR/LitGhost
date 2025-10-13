@@ -27,6 +27,7 @@
     "@ethersproject/keccak256": "^5.8.0",
     "@ethersproject/random": "^5.8.0",
     "@ethersproject/signing-key": "^5.8.0",
+    "@ethersproject/contracts": "^5.8.0",
     "@types/node": "^24.7.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.5"
