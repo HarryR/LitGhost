@@ -15,3 +15,4 @@
 .cargo
 target
 node_modules
+test.py

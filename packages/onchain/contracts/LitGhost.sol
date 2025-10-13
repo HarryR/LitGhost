@@ -54,11 +54,18 @@ struct UserInfo {
 }
 
 function packLeaf(Leaf memory leaf) pure returns (bytes32) {
-    return bytes32(abi.encodePacked(
-        leaf.encryptedBalances,
+    // Manual packing to avoid abi.encodePacked bug with calldata arrays
+    bytes32 packed = bytes32(abi.encodePacked(
+        leaf.encryptedBalances[0],
+        leaf.encryptedBalances[1],
+        leaf.encryptedBalances[2],
+        leaf.encryptedBalances[3],
+        leaf.encryptedBalances[4],
+        leaf.encryptedBalances[5],
         leaf.idx,
         leaf.nonce
     ));
+    return packed;
 }
 
 contract LitGhost {
@@ -222,6 +229,8 @@ contract LitGhost {
     }
 
     // See `blindUserId` in packages/core/src/crypto.ts to get DepositTo
+    // Only user can use ERC-20 deposit to pull their own tokens
+    // Any other case must use ERC-3009, which uses receiveWithAuthorization
     function depositERC20(DepositTo calldata to, uint256 in_amount)
         public
     {

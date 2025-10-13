@@ -442,5 +442,236 @@ describe("Manager and User Integration (ethers v5)", function () {
       const balance = await userClient.getBalance();
       expect(balance).to.equal(100_00);
     });
+
+    it("Should watch balance updates via LeafChange events", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Alice deposits
+      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const depositToSol = {
+        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+      };
+
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+      // Manager processes initial deposit
+      const deposits = await manager.processDepositEvents();
+      const lastDepositBlock1 = Math.max(...deposits.map(d => d.blockNumber));
+      const batch1 = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
+      const transcript1 = await manager.computeTranscriptForBatch(batch1);
+
+      // Record block number before first update
+      const blockBeforeFirstUpdate = await lg.runner?.provider?.getBlockNumber() ?? 0;
+
+      await v5lg.doUpdate(
+        batch1.opStart,
+        batch1.opCount,
+        batch1.nextBlock,
+        batch1.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch1.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript1).toString("hex")
+      );
+
+      // User client setup
+      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const encryptedUserId = manager.computeEncryptedUserId("alice");
+
+      const userClient = new UserClient(
+        userKeypair.privateKey,
+        encryptedUserId,
+        teePublicKey,
+        v5lg
+      );
+
+      // Now do an internal transfer to trigger another LeafChange event
+      const transactions: InternalTransaction[] = [
+        { from: "alice", to: "alice", amount: 10_00 }
+      ];
+
+      const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
+      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
+      const transcript2 = await manager.computeTranscriptForBatch(batch2);
+
+      await v5lg.doUpdate(
+        batch2.opStart,
+        batch2.opCount,
+        batch2.nextBlock,
+        batch2.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        [],
+        [],
+        "0x" + Buffer.from(transcript2).toString("hex")
+      );
+
+      // Watch for historical balance updates from before first update
+      const updates: BalanceUpdate[] = [];
+      for await (const update of userClient.watchBalanceUpdates({
+        fromBlock: blockBeforeFirstUpdate,
+        maxEvents: 2  // Only expect 2 events for this test
+      })) {
+        updates.push(update);
+      }
+
+      // Should have received 2 updates (initial deposit and internal transfer)
+      expect(updates.length).to.equal(2);
+
+      // First update should show 100_00 balance
+      expect(updates[0].balance).to.equal(100_00);
+      expect(updates[0].nonce).to.equal(1);
+
+      // Second update should still show 100_00 (self-transfer doesn't change balance)
+      expect(updates[1].balance).to.equal(100_00);
+      expect(updates[1].nonce).to.equal(2); // Nonce incremented
+
+      // Updates should have block numbers and transaction hashes
+      expect(updates[0].blockNumber).to.be.greaterThan(0);
+      expect(updates[1].blockNumber).to.be.greaterThan(updates[0].blockNumber);
+      expect(updates[0].transactionHash).to.be.a('string');
+      expect(updates[1].transactionHash).to.be.a('string');
+    });
+
+    it("Should support keepalive signals and manual breakout", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Alice deposits
+      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const depositToSol = {
+        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+      };
+
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+      // Manager processes deposit
+      const deposits = await manager.processDepositEvents();
+      const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
+      const batch = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
+      const transcript = await manager.computeTranscriptForBatch(batch);
+
+      await v5lg.doUpdate(
+        batch.opStart,
+        batch.opCount,
+        batch.nextBlock,
+        batch.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript).toString("hex")
+      );
+
+      // User client setup
+      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const encryptedUserId = manager.computeEncryptedUserId("alice");
+
+      const userClient = new UserClient(
+        userKeypair.privateKey,
+        encryptedUserId,
+        teePublicKey,
+        v5lg
+      );
+
+      // Test keepalive: watch with 100ms keepalive interval
+      const updates: (BalanceUpdate | null)[] = [];
+      let keepaliveCount = 0;
+
+      for await (const update of userClient.watchBalanceUpdates({
+        fromBlock: lastDepositBlock,
+        keepaliveMs: 100  // Very short for testing
+      })) {
+        updates.push(update);
+
+        if (update === null) {
+          keepaliveCount++;
+          // Break after receiving 2 keepalive signals
+          if (keepaliveCount >= 2) {
+            break;
+          }
+        }
+      }
+
+      // Should have received: 1 real update + 2 keepalive nulls
+      expect(updates.length).to.equal(3);
+      expect(updates[0]).to.not.be.null;
+      expect((updates[0] as BalanceUpdate).balance).to.equal(100_00);
+      expect(updates[1]).to.be.null;
+      expect(updates[2]).to.be.null;
+      expect(keepaliveCount).to.equal(2);
+    });
+
+    it("Should support manual breakout without keepalive", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Alice deposits
+      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const depositToSol = {
+        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+      };
+
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+      // Manager processes deposit
+      const deposits = await manager.processDepositEvents();
+      const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
+      const batch = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
+      const transcript = await manager.computeTranscriptForBatch(batch);
+
+      await v5lg.doUpdate(
+        batch.opStart,
+        batch.opCount,
+        batch.nextBlock,
+        batch.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript).toString("hex")
+      );
+
+      // User client setup
+      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const encryptedUserId = manager.computeEncryptedUserId("alice");
+
+      const userClient = new UserClient(
+        userKeypair.privateKey,
+        encryptedUserId,
+        teePublicKey,
+        v5lg
+      );
+
+      // Test manual breakout: watch without keepalive, break after 1 event
+      const updates: BalanceUpdate[] = [];
+
+      for await (const update of userClient.watchBalanceUpdates({
+        fromBlock: lastDepositBlock
+      })) {
+        if (update !== null) {
+          updates.push(update);
+          // Break immediately after first real event
+          break;
+        }
+      }
+
+      // Should have received exactly 1 update
+      expect(updates.length).to.equal(1);
+      expect(updates[0].balance).to.equal(100_00);
+    });
   });
 });

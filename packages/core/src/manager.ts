@@ -3,14 +3,13 @@ import {
   decryptDepositTo,
   getUserLeafInfo,
   decryptLeafBalance,
+  encryptBalance,
   type Leaf,
-  type DepositTo
+  type DepositTo,
 } from './crypto';
 import {
   deriveUserKeypair,
   computeSharedSecret,
-  createNamespacedKey,
-  encodeUint32
 } from './utils';
 import { computeTranscript, type UpdateBatch, type Payout } from './transcript';
 
@@ -319,16 +318,8 @@ export class ManagerContext {
       // Compute shared secret
       const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
 
-      // Derive secret with nonce
-      const secretWithNonce = arrayify(keccak256(concat([sharedSecret, encodeUint32(leaf.nonce)])));
-
-      // Encrypt balance
-      const balanceKey = createNamespacedKey(secretWithNonce, 'dorp.balance');
-      const balanceBytes = encodeUint32(newBalance);
-      const encryptedBalance = new Uint8Array(4);
-      for (let i = 0; i < 4; i++) {
-        encryptedBalance[i] = balanceBytes[i] ^ balanceKey[i];
-      }
+      // Encrypt balance using centralized crypto function
+      const encryptedBalance = encryptBalance(newBalance, sharedSecret, leaf.nonce);
 
       leaf.encryptedBalances[position] = encryptedBalance;
     }

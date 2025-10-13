@@ -16,7 +16,6 @@ export interface BalanceUpdate {
   blockNumber: number;
   balance: number;
   nonce: number;
-  timestamp: number;
   transactionHash: string;
 }
 
@@ -24,12 +23,12 @@ export interface BalanceUpdate {
  * Options for watching balance updates
  */
 export interface WatchBalanceOptions {
-  /** Maximum number of events to process (default: 1000) */
+  /** Maximum number of events to process before stopping (default: Infinity - run forever) */
   maxEvents?: number;
-  /** Timeout in milliseconds (default: 60000) */
-  timeoutMs?: number;
   /** Starting block number (default: current block) */
   fromBlock?: number | 'latest';
+  /** Emit keepalive null signals every N milliseconds when no events occur (default: disabled) */
+  keepaliveMs?: number;
 }
 
 /**
@@ -135,60 +134,82 @@ export class UserClient {
    * Get the user's current balance from the blockchain
    */
   async getBalance(): Promise<number> {
-    // Use cached values if available
-    if (this.userIndex !== null) {
-      const leafIdx = this.leafIdx!;
-      const leaves = await this.contract.getLeaves([leafIdx]);
-      const leaf: Leaf = {
-        encryptedBalances: leaves[0].encryptedBalances.map((b: string) => arrayify(b)),
-        idx: Number(leaves[0].idx),
-        nonce: Number(leaves[0].nonce)
-      };
-      return this.decryptBalance(leaf);
-    }
+    // Ensure user index and leaf info are cached
+    await this.getUserIndex();
 
-    // Single call to get user info and leaf together
-    const encryptedUserIdHex = '0x' + Buffer.from(this.encryptedUserId).toString('hex');
-    const userInfo = await this.contract.getUserInfo(encryptedUserIdHex);
-
-    this.userIndex = Number(userInfo.userIndex);
-
-    if (this.userIndex === 0) {
-      throw new Error('User not registered on-chain yet');
-    }
-
-    // Calculate and cache leaf info
-    const leafInfo = getUserLeafInfo(this.userIndex);
-    this.leafIdx = leafInfo.leafIdx;
-    this.position = leafInfo.position;
-
+    const leafIdx = this.leafIdx!;
+    const leaves = await this.contract.getLeaves([leafIdx]);
     const leaf: Leaf = {
-      encryptedBalances: userInfo.leaf.encryptedBalances.map((b: string) => arrayify(b)),
-      idx: Number(userInfo.leaf.idx),
-      nonce: Number(userInfo.leaf.nonce)
+      encryptedBalances: leaves[0].encryptedBalances.map((b: string) => arrayify(b)),
+      idx: Number(leaves[0].idx),
+      nonce: Number(leaves[0].nonce)
     };
 
     return this.decryptBalance(leaf);
   }
 
   /**
+   * Process a LeafChange event and create a BalanceUpdate
+   * Returns null if the event should be filtered (nonce already seen)
+   */
+  private processLeafChangeEvent(
+    event: any,
+    lastSeenNonce: number
+  ): BalanceUpdate | null {
+    const args = event.args!;
+    const leaf = this.unpackLeaf(args.leaf);
+
+    // Nonce-based filtering: ignore events with nonces we've already seen
+    if (leaf.nonce <= lastSeenNonce) {
+      return null;
+    }
+
+    const balance = this.decryptBalance(leaf);
+
+    return {
+      blockNumber: event.blockNumber,
+      balance,
+      nonce: leaf.nonce,
+      transactionHash: event.transactionHash
+    };
+  }
+
+  /**
    * Watch for balance updates via LeafChange events
    * Returns an async generator that yields balance updates
    *
+   * Uses websocket event listeners for real-time updates.
+   * Events are filtered by nonce to handle out-of-order delivery and prevent duplicates.
+   * Only events with nonces greater than previously seen nonces are yielded.
+   *
+   * Runs indefinitely by default. User can stop by breaking out of the for-await loop.
+   * The cleanup (removing event listeners) happens automatically when the loop exits.
+   *
    * @example
    * ```typescript
-   * for await (const update of client.watchBalanceUpdates({ maxEvents: 10, timeoutMs: 30000 })) {
-   *   console.log(`Balance: ${update.balance}, Block: ${update.blockNumber}`);
+   * // Run forever with keepalive signals
+   * for await (const update of client.watchBalanceUpdates({ keepaliveMs: 30000 })) {
+   *   if (update === null) {
+   *     console.log('Still alive, no events in last 30 seconds');
+   *     if (shouldStop()) break;
+   *   } else {
+   *     console.log(`Balance: ${update.balance}, Nonce: ${update.nonce}`);
+   *   }
+   * }
+   *
+   * // Or limit to 10 events
+   * for await (const update of client.watchBalanceUpdates({ maxEvents: 10 })) {
+   *   console.log(`Balance: ${update.balance}, Nonce: ${update.nonce}`);
    * }
    * ```
    */
   async *watchBalanceUpdates(
     options: WatchBalanceOptions = {}
-  ): AsyncGenerator<BalanceUpdate, void, undefined> {
-    const maxEvents = options.maxEvents ?? 1000;
-    const timeoutMs = options.timeoutMs ?? 60000;
-    const startTime = Date.now();
+  ): AsyncGenerator<BalanceUpdate | null, void, undefined> {
+    const maxEvents = options.maxEvents ?? Infinity;
+    const keepaliveMs = options.keepaliveMs;
     let eventCount = 0;
+    let lastSeenNonce = -1;
 
     // Ensure user is initialized
     await this.getUserIndex();
@@ -211,86 +232,99 @@ export class UserClient {
       const historicalEvents = await this.contract.queryFilter(filter, fromBlock, currentBlock);
 
       for (const event of historicalEvents) {
-        // Timeout check
-        if (Date.now() - startTime > timeoutMs) {
-          return;
-        }
-
         // Max events check
         if (eventCount >= maxEvents) {
           return;
         }
 
-        const args = event.args!;
-        const leaf = this.unpackLeaf(args.leaf);
-        const balance = this.decryptBalance(leaf);
+        const update = this.processLeafChangeEvent(event, lastSeenNonce);
+        if (!update) {
+          continue;
+        }
 
-        const block = await event.getBlock();
-
-        yield {
-          blockNumber: event.blockNumber,
-          balance,
-          nonce: leaf.nonce,
-          timestamp: block.timestamp,
-          transactionHash: event.transactionHash
-        };
-
+        yield update;
+        lastSeenNonce = update.nonce;
         eventCount++;
       }
     }
 
-    // Note: Async generators don't easily support event listeners
-    // For now, we'll poll for new events
-    const pollInterval = 2000; // 2 seconds
-    let lastCheckedBlock = currentBlock;
+    // Check if provider supports websockets (has 'on' method)
+    const supportsWebsockets = typeof (this.contract.provider as any).on === 'function';
 
-    while (true) {
-      // Timeout check
-      if (Date.now() - startTime > timeoutMs) {
-        break;
-      }
+    if (!supportsWebsockets) {
+      throw new Error('Provider does not support websockets. Please use a websocket provider (e.g., wss://...)');
+    }
 
-      // Max events check
-      if (eventCount >= maxEvents) {
-        break;
-      }
+    // Use event listeners for real-time updates (websocket)
+    const eventQueue: BalanceUpdate[] = [];
+    let resolveNext: ((value: BalanceUpdate) => void) | null = null;
+    let finished = false;
 
-      // Wait before next poll
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    const eventHandler = (_idx: number, _leaf: string, event: any) => {
+      if (finished) return;
 
-      const latestBlock = await this.contract.provider.getBlockNumber();
-      if (latestBlock > lastCheckedBlock) {
-        const newEvents = await this.contract.queryFilter(
-          filter,
-          lastCheckedBlock + 1,
-          latestBlock
-        );
-
-        for (const event of newEvents) {
-          // Max events check
-          if (eventCount >= maxEvents) {
-            return;
-          }
-
-          const args = event.args!;
-          const leaf = this.unpackLeaf(args.leaf);
-          const balance = this.decryptBalance(leaf);
-
-          const block = await event.getBlock();
-
-          yield {
-            blockNumber: event.blockNumber,
-            balance,
-            nonce: leaf.nonce,
-            timestamp: block.timestamp,
-            transactionHash: event.transactionHash
-          };
-
-          eventCount++;
+      try {
+        const update = this.processLeafChangeEvent(event, lastSeenNonce);
+        if (!update) {
+          return;
         }
 
-        lastCheckedBlock = latestBlock;
+        if (resolveNext) {
+          resolveNext(update);
+          resolveNext = null;
+        } else {
+          eventQueue.push(update);
+        }
+      } catch (err) {
+        // Ignore errors in event processing
       }
+    };
+
+    // Register event listener for new events
+    this.contract.on(filter, eventHandler);
+
+    try {
+      while (true) {
+        // Max events check
+        if (eventCount >= maxEvents) {
+          break;
+        }
+
+        // Get next event from queue or wait for one
+        let update: BalanceUpdate | null;
+        if (eventQueue.length > 0) {
+          update = eventQueue.shift()!;
+        } else {
+          // Wait for next event with timeout
+          // Use keepaliveMs if specified, otherwise default to 5 seconds for periodic checking
+          const waitTimeout = keepaliveMs ?? 5000;
+
+          update = await new Promise<BalanceUpdate>((resolve, reject) => {
+            resolveNext = resolve;
+            setTimeout(() => reject(new Error('timeout')), waitTimeout);
+          }).catch(() => null as any);
+
+          if (!update) {
+            resolveNext = null;
+
+            // If keepalive is enabled, emit a null signal
+            if (keepaliveMs !== undefined) {
+              yield null;
+            }
+
+            continue; // No event received, loop back to check maxEvents and try again
+          }
+        }
+
+        lastSeenNonce = update.nonce;
+        yield update;
+        eventCount++;
+      }
+    } finally {
+      // Cleanup: remove event listener when generator is stopped
+      // This runs whether the user breaks, an error occurs, or maxEvents is reached
+      finished = true;
+      this.contract.off(filter, eventHandler);
     }
   }
 }

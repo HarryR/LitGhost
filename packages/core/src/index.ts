@@ -10,7 +10,9 @@ export {
   decryptBalance,
   encryptLeaf,
   decryptLeafBalance,
-  getUserLeafInfo
+  getUserLeafInfo,
+  NAMESPACE_BALANCE,
+  NAMESPACE_DEPOSIT
 } from './crypto';
 
 // Transcript utilities

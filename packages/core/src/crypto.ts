@@ -1,8 +1,8 @@
 import { keccak256, arrayify, concat } from './ethers-compat.js';
 import { encodeUint32, decodeUint32, xorBytes, randomKeypair, createNamespacedKey, computeSharedSecret } from './utils';
 
-const NAMESPACE_DEPOSIT = 'dorp.deposit';
-const NAMESPACE_BALANCE = 'dorp.balance';
+export const NAMESPACE_DEPOSIT = 'dorp.deposit';
+export const NAMESPACE_BALANCE = 'dorp.balance';
 
 /**
  * Types
@@ -89,25 +89,35 @@ export function decryptDepositTo(
 
 /**
  * Encrypt a single balance (uint32) for a specific user
+ * @param balance - The balance to encrypt
+ * @param sharedSecret - The shared secret between TEE and user
+ * @param nonce - Nonce for additional entropy (required for security)
  */
 export function encryptBalance(
   balance: number,
-  sharedSecret: Uint8Array
+  sharedSecret: Uint8Array,
+  nonce: number
 ): Uint8Array {
+  const secretWithNonce = deriveSecretWithNonce(sharedSecret, nonce);
   const balanceBytes = encodeUint32(balance);
-  const encryptionKey = createNamespacedKey(sharedSecret, NAMESPACE_BALANCE);
+  const encryptionKey = createNamespacedKey(secretWithNonce, NAMESPACE_BALANCE);
   return xorBytes(balanceBytes, encryptionKey.slice(0, 4));
 }
 
 /**
  * Decrypt a single balance for a specific user
  * Note: XOR is symmetric, so decryption uses the same operation as encryption
+ * @param encryptedBalance - The encrypted balance
+ * @param sharedSecret - The shared secret between TEE and user
+ * @param nonce - Nonce (must match the nonce used during encryption)
  */
 export function decryptBalance(
   encryptedBalance: Uint8Array,
-  sharedSecret: Uint8Array
+  sharedSecret: Uint8Array,
+  nonce: number
 ): number {
-  const decryptionKey = createNamespacedKey(sharedSecret, NAMESPACE_BALANCE);
+  const secretWithNonce = deriveSecretWithNonce(sharedSecret, nonce);
+  const decryptionKey = createNamespacedKey(secretWithNonce, NAMESPACE_BALANCE);
   const balanceBytes = xorBytes(encryptedBalance, decryptionKey.slice(0, 4));
   return decodeUint32(balanceBytes);
 }
@@ -133,8 +143,7 @@ export function encryptLeaf(
     throw new Error('Leaf must contain exactly 6 balances and 6 shared secrets');
   }
   return balances.map((balance, i) => {
-    const secretWithNonce = deriveSecretWithNonce(userSharedSecrets[i], nonce);
-    return encryptBalance(balance, secretWithNonce);
+    return encryptBalance(balance, userSharedSecrets[i], nonce);
   });
 }
 
@@ -149,8 +158,7 @@ export function decryptLeafBalance(
   if (position < 0 || position >= 6) {
     throw new Error('Position must be between 0 and 5');
   }
-  const secretWithNonce = deriveSecretWithNonce(userSharedSecret, leaf.nonce);
-  return decryptBalance(leaf.encryptedBalances[position], secretWithNonce);
+  return decryptBalance(leaf.encryptedBalances[position], userSharedSecret, leaf.nonce);
 }
 
 /**

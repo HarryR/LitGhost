@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: !isSandboxed, // Only empty on first build (standard)
+      minify: 'esbuild',
+      target: 'es2020',
       lib: {
         entry: resolve(__dirname, 'src/index.ts'),
         name: 'Core',
@@ -35,9 +37,10 @@ export default defineConfig(({ mode }) => {
           '@ethersproject/contracts',
         ],
         output: {
-          inlineDynamicImports: true
+          inlineDynamicImports: true,
+          compact: true, // Remove unnecessary whitespace
         }
-      }
+      },
     }
   }
 });
