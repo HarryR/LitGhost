@@ -45,6 +45,12 @@ struct OpCounters {
     uint64 opCount;
     uint64 processedOps;
     uint32 userCount;
+    uint64 lastProcessedBlock;
+}
+
+struct UserInfo {
+    uint32 userIndex;
+    Leaf leaf;
 }
 
 function packLeaf(Leaf memory leaf) pure returns (bytes32) {
@@ -55,7 +61,7 @@ function packLeaf(Leaf memory leaf) pure returns (bytes32) {
     ));
 }
 
-contract Dorp {
+contract LitGhost {
 
     uint8 constant internal DECIMALS = 2;
 
@@ -90,6 +96,10 @@ contract Dorp {
         // Initialize userCount to 1, treating user ID 0 as a sentinel value
         // This allows us to distinguish "user doesn't exist" (returns 0) from actual users (>= 1)
         m_counters.userCount = 1;
+
+        // Initialize lastProcessedBlock to deployment block
+        // Manager will process deposits starting from the block after deployment
+        m_counters.lastProcessedBlock = uint64(block.number);
     }
 
     function getLeaves(uint32[] calldata leafIndices)
@@ -130,6 +140,40 @@ contract Dorp {
         counters = m_counters;
 
         dust = m_dust;
+    }
+
+    function getUserInfo(bytes32 encryptedUserId)
+        public view returns (UserInfo memory info)
+    {
+        info.userIndex = m_userIndices[encryptedUserId];
+
+        if (info.userIndex > 0) {
+            uint32 leafIdx = (info.userIndex - 1) / 6;
+            info.leaf = m_leaves[leafIdx];
+        }
+    }
+
+    function getUserInfoBatch(bytes32[] calldata encryptedUserIds)
+        public view returns (UserInfo[] memory infos)
+    {
+        uint n = encryptedUserIds.length;
+        infos = new UserInfo[](n);
+
+        for (uint i = 0; i < n; i++) {
+            infos[i] = getUserInfo(encryptedUserIds[i]);
+        }
+    }
+
+    function getUpdateContext(bytes32[] calldata encryptedUserIds)
+        public view returns (
+            OpCounters memory counters,
+            uint256 dust,
+            UserInfo[] memory userInfos
+        )
+    {
+        counters = m_counters;
+        dust = m_dust;
+        userInfos = getUserInfoBatch(encryptedUserIds);
     }
 
     function _convertToTwoDecimals(uint256 amount, uint8 inputDecimals)
@@ -230,10 +274,25 @@ contract Dorp {
             m_token.transfer(msg.sender, callerIncentive);
         }
     }
+
+    function depositManyERC3009(DepositTo[] calldata to, Auth3009[] calldata auth, uint256[] calldata callerIncentive)
+        public
+    {
+        require( to.length == auth.length, "400.1!" );
+        require( auth.length == callerIncentive.length, "400.2!" );
+
+        uint n = to.length;
+
+        for( uint i = 0; i < n; i++ )
+        {
+            depositERC3009(to[i], auth[i], callerIncentive[i]);
+        }
+    }
     
     function doUpdate(
         uint64 in_opStart,
         uint64 in_opCount,
+        uint64 in_nextBlock,
         Leaf[] calldata in_updates,
         bytes32[] calldata in_newUsers,
         Payout[] calldata in_pay,
@@ -252,7 +311,7 @@ contract Dorp {
 
         // Update leaves
         uint256 lc = in_updates.length;
-        bytes32 transcript = keccak256(abi.encode(in_opStart, in_opCount, lc));
+        bytes32 transcript = keccak256(abi.encode(in_opStart, in_opCount, in_nextBlock, lc));
         for( uint256 i = 0; i < lc; i++ )
         {
             Leaf calldata leaf = in_updates[i];
@@ -290,8 +349,9 @@ contract Dorp {
 
         require( transcript == in_transcript, "500!" );
 
-        // Increment processedOps and save counters back to storage
+        // Update counters and save back to storage
         counters.processedOps += in_opCount;
+        counters.lastProcessedBlock = in_nextBlock;
         m_counters = counters;
     }
 

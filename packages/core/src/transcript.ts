@@ -12,6 +12,7 @@ export interface Payout {
 export interface UpdateBatch {
   opStart: bigint;
   opCount: bigint;
+  nextBlock: bigint;
   updates: Leaf[];
   newUsers: Uint8Array[];  // bytes32[]
   payouts: Payout[];
@@ -19,7 +20,7 @@ export interface UpdateBatch {
 
 /**
  * Compute the transcript hash for a doUpdate call
- * This matches the Solidity logic in Dorp.sol::doUpdate
+ * This matches the Solidity logic in LitGhost.sol::doUpdate
  * Now using abi.encode throughout for cleaner code
  */
 export function computeTranscript(
@@ -27,11 +28,11 @@ export function computeTranscript(
   oldLeaves: Map<number, Leaf>,
   currentUserCount: number
 ): Uint8Array {
-  // Initialize transcript: keccak256(abi.encode(in_opStart, in_opCount, lc))
+  // Initialize transcript: keccak256(abi.encode(in_opStart, in_opCount, in_nextBlock, lc))
   let transcript = arrayify(keccak256(
     defaultAbiCoder.encode(
-      ['uint64', 'uint64', 'uint256'],
-      [batch.opStart, batch.opCount, batch.updates.length]
+      ['uint64', 'uint64', 'uint64', 'uint256'],
+      [batch.opStart, batch.opCount, batch.nextBlock, batch.updates.length]
     )
   ));
 

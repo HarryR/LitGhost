@@ -5,7 +5,8 @@ import {
   type Leaf
 } from './crypto';
 import {
-  computeSharedSecret
+  computeSharedSecret,
+  decodeUint32
 } from './utils';
 
 /**
@@ -60,7 +61,7 @@ export class UserClient {
     const userIndices = await this.contract.getUserLeaves([encryptedUserIdHex]);
     // Handle both BigNumber and plain number returns
     const firstIndex = userIndices[0];
-    this.userIndex = Number(firstIndex.toString ? firstIndex.toString() : firstIndex);
+    this.userIndex = Number(firstIndex);
 
     if (this.userIndex === 0) {
       throw new Error('User not registered on-chain yet');
@@ -109,12 +110,10 @@ export class UserClient {
     }
 
     // Next 4 bytes: idx (uint32)
-    const idxBytes = bytes.slice(24, 28);
-    const idx = (idxBytes[0] << 24) | (idxBytes[1] << 16) | (idxBytes[2] << 8) | idxBytes[3];
+    const idx = decodeUint32(bytes.slice(24, 28));
 
     // Last 4 bytes: nonce (uint32)
-    const nonceBytes = bytes.slice(28, 32);
-    const nonce = (nonceBytes[0] << 24) | (nonceBytes[1] << 16) | (nonceBytes[2] << 8) | nonceBytes[3];
+    const nonce = decodeUint32(bytes.slice(28, 32));
 
     return {
       encryptedBalances,
@@ -136,16 +135,37 @@ export class UserClient {
    * Get the user's current balance from the blockchain
    */
   async getBalance(): Promise<number> {
-    await this.getUserIndex(); // Ensure initialized
+    // Use cached values if available
+    if (this.userIndex !== null) {
+      const leafIdx = this.leafIdx!;
+      const leaves = await this.contract.getLeaves([leafIdx]);
+      const leaf: Leaf = {
+        encryptedBalances: leaves[0].encryptedBalances.map((b: string) => arrayify(b)),
+        idx: Number(leaves[0].idx),
+        nonce: Number(leaves[0].nonce)
+      };
+      return this.decryptBalance(leaf);
+    }
 
-    const leafIdx = this.leafIdx!;
+    // Single call to get user info and leaf together
+    const encryptedUserIdHex = '0x' + Buffer.from(this.encryptedUserId).toString('hex');
+    const userInfo = await this.contract.getUserInfo(encryptedUserIdHex);
 
-    // Get leaf from blockchain
-    const leaves = await this.contract.getLeaves([leafIdx]);
+    this.userIndex = Number(userInfo.userIndex);
+
+    if (this.userIndex === 0) {
+      throw new Error('User not registered on-chain yet');
+    }
+
+    // Calculate and cache leaf info
+    const leafInfo = getUserLeafInfo(this.userIndex);
+    this.leafIdx = leafInfo.leafIdx;
+    this.position = leafInfo.position;
+
     const leaf: Leaf = {
-      encryptedBalances: leaves[0].encryptedBalances.map((b: string) => arrayify(b)),
-      idx: Number(leaves[0].idx),
-      nonce: Number(leaves[0].nonce)
+      encryptedBalances: userInfo.leaf.encryptedBalances.map((b: string) => arrayify(b)),
+      idx: Number(userInfo.leaf.idx),
+      nonce: Number(userInfo.leaf.nonce)
     };
 
     return this.decryptBalance(leaf);

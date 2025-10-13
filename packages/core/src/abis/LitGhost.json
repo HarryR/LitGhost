@@ -271,6 +271,85 @@
   {
     "inputs": [
       {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "rand",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "user",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct DepositTo[]",
+        "name": "to",
+        "type": "tuple[]"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "from",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validAfter",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validBefore",
+            "type": "uint256"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "v",
+                "type": "uint8"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "r",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "s",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct Signature",
+            "name": "sig",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct Auth3009[]",
+        "name": "auth",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "callerIncentive",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "depositManyERC3009",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint64",
         "name": "in_opStart",
         "type": "uint64"
@@ -278,6 +357,11 @@
       {
         "internalType": "uint64",
         "name": "in_opCount",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "in_nextBlock",
         "type": "uint64"
       },
       {
@@ -391,6 +475,11 @@
             "internalType": "uint32",
             "name": "userCount",
             "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "lastProcessedBlock",
+            "type": "uint64"
           }
         ],
         "internalType": "struct OpCounters",
@@ -401,6 +490,182 @@
         "internalType": "uint256",
         "name": "dust",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "encryptedUserIds",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "getUpdateContext",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "opCount",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "processedOps",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "userCount",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "lastProcessedBlock",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct OpCounters",
+        "name": "counters",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "dust",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "userIndex",
+            "type": "uint32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes4[6]",
+                "name": "encryptedBalances",
+                "type": "bytes4[6]"
+              },
+              {
+                "internalType": "uint32",
+                "name": "idx",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "nonce",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct Leaf",
+            "name": "leaf",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct UserInfo[]",
+        "name": "userInfos",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "encryptedUserId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getUserInfo",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "userIndex",
+            "type": "uint32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes4[6]",
+                "name": "encryptedBalances",
+                "type": "bytes4[6]"
+              },
+              {
+                "internalType": "uint32",
+                "name": "idx",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "nonce",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct Leaf",
+            "name": "leaf",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct UserInfo",
+        "name": "info",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "encryptedUserIds",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "getUserInfoBatch",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "userIndex",
+            "type": "uint32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes4[6]",
+                "name": "encryptedBalances",
+                "type": "bytes4[6]"
+              },
+              {
+                "internalType": "uint32",
+                "name": "idx",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "nonce",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct Leaf",
+            "name": "leaf",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct UserInfo[]",
+        "name": "infos",
+        "type": "tuple[]"
       }
     ],
     "stateMutability": "view",

@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { Dorp, MockToken } from "../src/contracts";
+import { LitGhost, MockToken } from "../src/contracts";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
   createDepositTo,
@@ -19,7 +19,7 @@ import { keccak256 } from "@ethersproject/keccak256";
 import { arrayify, concat } from "@ethersproject/bytes";
 
 /**
- * Comprehensive test suite for the Dorp contract
+ * Comprehensive test suite for the LitGhost contract
  *
  * This suite validates that the on-chain Solidity contract works correctly
  * with the TypeScript cryptographic library functions from @monorepo/core.
@@ -32,8 +32,8 @@ import { arrayify, concat } from "@ethersproject/bytes";
  * - ERC20 and ERC3009 (transferWithAuthorization) deposit flows
  * - Encrypted leaf updates and payout processing
  */
-describe("Dorp Contract", function () {
-  let dorp: Dorp;
+describe("LitGhost Contract", function () {
+  let lg: LitGhost;
   let token: MockToken;
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
@@ -57,10 +57,10 @@ describe("Dorp Contract", function () {
     token = await MockTokenFactory.deploy("Mock USDC", "MUSDC", TOKEN_DECIMALS);
     await token.waitForDeployment();
 
-    // Deploy Dorp contract
-    const DorpFactory = await ethers.getContractFactory("Dorp");
-    dorp = await DorpFactory.deploy(await token.getAddress(), owner.address);
-    await dorp.waitForDeployment();
+    // Deploy LitGhost contract
+    const LitGhostFactory = await ethers.getContractFactory("LitGhost");
+    lg = await LitGhostFactory.deploy(await token.getAddress(), owner.address);
+    await lg.waitForDeployment();
 
     // Mint tokens to users
     await token.mint(user1.address, INITIAL_BALANCE);
@@ -69,7 +69,7 @@ describe("Dorp Contract", function () {
 
   describe("Deployment", function () {
     it("Should set the correct owner", async function () {
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       expect(status.counters.opCount).to.equal(0);
       expect(status.counters.processedOps).to.equal(0);
       // User ID 0 is reserved as sentinel, so userCount starts at 1
@@ -99,8 +99,8 @@ describe("Dorp Contract", function () {
       };
 
       // Approve and deposit
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      const tx = await dorp
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      const tx = await lg
         .connect(user1)
         .depositERC20(depositToSol, depositAmount);
       const receipt = await tx.wait();
@@ -119,7 +119,7 @@ describe("Dorp Contract", function () {
       expect(decryptedUsername).to.equal("user123");
 
       // Verify counter updated
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       expect(status.counters.opCount).to.equal(1);
     });
 
@@ -133,11 +133,11 @@ describe("Dorp Contract", function () {
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
       };
 
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       // Check dust was accumulated
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       expect(status.dust).to.equal(1n);
     });
   });
@@ -180,7 +180,7 @@ describe("Dorp Contract", function () {
 
       const value = {
         from: user1.address,
-        to: await dorp.getAddress(),
+        to: await lg.getAddress(),
         value: depositAmount,
         validAfter: validAfter,
         validBefore: validBefore,
@@ -202,12 +202,12 @@ describe("Dorp Contract", function () {
         },
       };
 
-      // Deposit using ERC3009 - only the Dorp contract (receiver) can call this
-      const tx = await dorp.connect(user2)['depositERC3009((bytes32,bytes32),(address,uint256,uint256,uint256,(uint8,bytes32,bytes32)))'](depositToSol, auth);
+      // Deposit using ERC3009 - only the LitGhost contract (receiver) can call this
+      const tx = await lg.connect(user2)['depositERC3009((bytes32,bytes32),(address,uint256,uint256,uint256,(uint8,bytes32,bytes32)))'](depositToSol, auth);
       await tx.wait();
 
       // Verify deposit succeeded
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       expect(status.counters.opCount).to.equal(1);
     });
   });
@@ -238,8 +238,8 @@ describe("Dorp Contract", function () {
         };
 
         // Make deposit
-        await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-        await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
       }
 
       // TEE processes deposits and creates encrypted leaf
@@ -269,16 +269,18 @@ describe("Dorp Contract", function () {
       });
 
       // Use computeTranscript from core library
+      const currentBlock = await lg.runner!.provider!.getBlockNumber();
       const batch: UpdateBatch = {
         opStart: 0n,
         opCount: 6n,
+        nextBlock: BigInt(currentBlock + 1),
         updates: [leaf],
         newUsers: newUserIds,
         payouts: [],
       };
 
       const oldLeaves = new Map<number, Leaf>();
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       const currentUserCount = Number(status.counters.userCount);
       const transcript = computeTranscript(batch, oldLeaves, currentUserCount);
       const transcriptHex = "0x" + Buffer.from(transcript).toString("hex");
@@ -297,11 +299,12 @@ describe("Dorp Contract", function () {
       );
 
       // Execute update
-      const tx = await dorp
+      const tx = await lg
         .connect(owner)
         .doUpdate(
           batch.opStart,
           batch.opCount,
+          batch.nextBlock,
           [leafSol],
           newUsersSol,
           [],
@@ -310,10 +313,218 @@ describe("Dorp Contract", function () {
       await tx.wait();
 
       // Verify counters updated
-      const statusAfter = await dorp.getStatus();
+      const statusAfter = await lg.getStatus();
       expect(statusAfter.counters.processedOps).to.equal(6);
       // Should have added 6 new users to the initial count
       expect(statusAfter.counters.userCount).to.equal(currentUserCount + 6);
+    });
+  });
+
+  describe("Batched View Methods", function () {
+    it("Should return user info with getUserInfo for existing user", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Create and process a deposit
+      const { depositTo } = await createDepositTo("user123", teeKeypair.publicKey);
+      const depositToSol = {
+        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+      };
+
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+      // Compute encrypted user ID
+      const encryptedUserId = arrayify(keccak256(concat([
+        teeKeypair.privateKey,
+        Buffer.from("user123", 'utf8')
+      ])));
+      const encryptedUserIdHex = "0x" + Buffer.from(encryptedUserId).toString("hex");
+
+      // Process the deposit with doUpdate
+      const { publicKey } = deriveUserKeypair("user123", userMasterKey);
+      const sharedSecret = computeSharedSecret(teeKeypair.privateKey, publicKey);
+      const balances = [100_00, 0, 0, 0, 0, 0];
+      const nonce = 1;
+
+      const userSharedSecrets = [sharedSecret, sharedSecret, sharedSecret, sharedSecret, sharedSecret, sharedSecret];
+      const encryptedBalances = encryptLeaf(balances, userSharedSecrets, nonce);
+
+      const leaf: Leaf = {
+        encryptedBalances: encryptedBalances,
+        idx: 0,
+        nonce: nonce,
+      };
+
+      const currentBlock1 = await lg.runner!.provider!.getBlockNumber();
+      const batch: UpdateBatch = {
+        opStart: 0n,
+        opCount: 1n,
+        nextBlock: BigInt(currentBlock1 + 1),
+        updates: [leaf],
+        newUsers: [encryptedUserId],
+        payouts: [],
+      };
+
+      const oldLeaves = new Map<number, Leaf>();
+      const status = await lg.getStatus();
+      const currentUserCount = Number(status.counters.userCount);
+      const transcript = computeTranscript(batch, oldLeaves, currentUserCount);
+
+      const leafSol = {
+        encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+        idx: leaf.idx,
+        nonce: leaf.nonce,
+      };
+
+      await lg.connect(owner).doUpdate(
+        batch.opStart,
+        batch.opCount,
+        batch.nextBlock,
+        [leafSol],
+        [encryptedUserIdHex],
+        [],
+        "0x" + Buffer.from(transcript).toString("hex")
+      );
+
+      // Now test getUserInfo
+      const userInfo = await lg.getUserInfo(encryptedUserIdHex);
+      expect(userInfo.userIndex).to.equal(currentUserCount);
+      expect(userInfo.leaf.idx).to.equal(0);
+      expect(userInfo.leaf.nonce).to.equal(1);
+    });
+
+    it("Should return userIndex 0 for non-existent user", async function () {
+      const fakeUserId = keccak256(Buffer.from("nonexistent", 'utf8'));
+      const userInfo = await lg.getUserInfo(fakeUserId);
+
+      expect(userInfo.userIndex).to.equal(0);
+    });
+
+    it("Should batch fetch multiple users with getUserInfoBatch", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Create 3 users
+      const usernames = ["alice", "bob", "charlie"];
+      const encryptedUserIds: Uint8Array[] = [];
+
+      for (const username of usernames) {
+        const { depositTo } = await createDepositTo(username, teeKeypair.publicKey);
+        const depositToSol = {
+          rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+          user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+        };
+
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+        const encryptedUserId = arrayify(keccak256(concat([
+          teeKeypair.privateKey,
+          Buffer.from(username, 'utf8')
+        ])));
+        encryptedUserIds.push(encryptedUserId);
+      }
+
+      // Process all deposits in one update
+      const balances = [100_00, 100_00, 100_00, 0, 0, 0];
+      const nonce = 1;
+
+      const userSharedSecrets = usernames.map(username => {
+        const { publicKey } = deriveUserKeypair(username, userMasterKey);
+        return computeSharedSecret(teeKeypair.privateKey, publicKey);
+      }).concat([Buffer.alloc(32), Buffer.alloc(32), Buffer.alloc(32)]);
+
+      const encryptedBalances = encryptLeaf(balances, userSharedSecrets, nonce);
+
+      const leaf: Leaf = {
+        encryptedBalances: encryptedBalances,
+        idx: 0,
+        nonce: nonce,
+      };
+
+      const currentBlock2 = await lg.runner!.provider!.getBlockNumber();
+      const batch: UpdateBatch = {
+        opStart: 0n,
+        opCount: 3n,
+        nextBlock: BigInt(currentBlock2 + 1),
+        updates: [leaf],
+        newUsers: encryptedUserIds,
+        payouts: [],
+      };
+
+      const oldLeaves = new Map<number, Leaf>();
+      const status = await lg.getStatus();
+      const currentUserCount = Number(status.counters.userCount);
+      const transcript = computeTranscript(batch, oldLeaves, currentUserCount);
+
+      const leafSol = {
+        encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+        idx: leaf.idx,
+        nonce: leaf.nonce,
+      };
+
+      await lg.connect(owner).doUpdate(
+        batch.opStart,
+        batch.opCount,
+        batch.nextBlock,
+        [leafSol],
+        encryptedUserIds.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript).toString("hex")
+      );
+
+      // Test getUserInfoBatch
+      const encryptedUserIdsHex = encryptedUserIds.map(id => "0x" + Buffer.from(id).toString("hex"));
+      const userInfos = await lg.getUserInfoBatch(encryptedUserIdsHex);
+
+      expect(userInfos.length).to.equal(3);
+      for (let i = 0; i < 3; i++) {
+        expect(userInfos[i].userIndex).to.equal(currentUserCount + i);
+        expect(userInfos[i].leaf.idx).to.equal(0);
+        expect(userInfos[i].leaf.nonce).to.equal(1);
+      }
+    });
+
+    it("Should return complete context with getUpdateContext", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Create 2 users
+      const usernames = ["dave", "eve"];
+      const encryptedUserIds: Uint8Array[] = [];
+
+      for (const username of usernames) {
+        const { depositTo } = await createDepositTo(username, teeKeypair.publicKey);
+        const depositToSol = {
+          rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+          user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+        };
+
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+        const encryptedUserId = arrayify(keccak256(concat([
+          teeKeypair.privateKey,
+          Buffer.from(username, 'utf8')
+        ])));
+        encryptedUserIds.push(encryptedUserId);
+      }
+
+      const statusBefore = await lg.getStatus();
+
+      // Call getUpdateContext
+      const encryptedUserIdsHex = encryptedUserIds.map(id => "0x" + Buffer.from(id).toString("hex"));
+      const context = await lg.getUpdateContext(encryptedUserIdsHex);
+
+      // Verify it returns counters, dust, and user infos
+      expect(context.counters.opCount).to.equal(statusBefore.counters.opCount);
+      expect(context.counters.processedOps).to.equal(statusBefore.counters.processedOps);
+      expect(context.counters.userCount).to.equal(statusBefore.counters.userCount);
+      expect(context.dust).to.equal(statusBefore.dust);
+      expect(context.userInfos.length).to.equal(2);
+
+      // Both users should have userIndex 0 (not registered yet)
+      expect(context.userInfos[0].userIndex).to.equal(0);
+      expect(context.userInfos[1].userIndex).to.equal(0);
     });
   });
 
@@ -328,8 +539,8 @@ describe("Dorp Contract", function () {
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
       };
 
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       // Create payout using core types
       const payout: Payout = {
@@ -338,16 +549,18 @@ describe("Dorp Contract", function () {
       };
 
       // Use computeTranscript from core library
+      const currentBlock3 = await lg.runner!.provider!.getBlockNumber();
       const batch: UpdateBatch = {
         opStart: 0n,
         opCount: 1n,
+        nextBlock: BigInt(currentBlock3 + 1),
         updates: [],
         newUsers: [],
         payouts: [payout],
       };
 
       const oldLeaves = new Map<number, Leaf>();
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       const currentUserCount = Number(status.counters.userCount);
       const transcript = computeTranscript(batch, oldLeaves, currentUserCount);
       const transcriptHex = "0x" + Buffer.from(transcript).toString("hex");
@@ -355,9 +568,10 @@ describe("Dorp Contract", function () {
       const balanceBefore = await token.balanceOf(user2.address);
 
       // Execute update with payout
-      await dorp.connect(owner).doUpdate(
+      await lg.connect(owner).doUpdate(
         batch.opStart,
         batch.opCount,
+        batch.nextBlock,
         [],
         [],
         [payout],
@@ -378,19 +592,19 @@ describe("Dorp Contract", function () {
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
       };
 
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       const ownerBalanceBefore = await token.balanceOf(owner.address);
 
       // Collect dust
-      await dorp.connect(owner).collectDust();
+      await lg.connect(owner).collectDust();
 
       const ownerBalanceAfter = await token.balanceOf(owner.address);
       expect(ownerBalanceAfter - ownerBalanceBefore).to.equal(1n);
 
       // Verify dust is cleared
-      const status = await dorp.getStatus();
+      const status = await lg.getStatus();
       expect(status.dust).to.equal(0n);
     });
   });

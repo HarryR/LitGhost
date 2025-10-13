@@ -35,7 +35,7 @@ export {
 } from './utils';
 
 export {
-  Dorp,
+  LitGhost,
   Token
 } from './contracts';
 

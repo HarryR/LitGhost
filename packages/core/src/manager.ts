@@ -72,7 +72,7 @@ export class ManagerContext {
     const userIndices = await this.contract.getUserLeaves([encryptedUserIdHex]);
     // Handle both BigNumber and plain number returns
     const firstIndex = userIndices[0];
-    return Number(firstIndex.toString ? firstIndex.toString() : firstIndex);
+    return Number(firstIndex);
   }
 
   /**
@@ -80,19 +80,23 @@ export class ManagerContext {
    * Returns 0 if user doesn't exist or has no balance
    */
   async getBalanceFromChain(telegramUsername: string): Promise<number> {
-    const userIndex = await this.getUserIndex(telegramUsername);
+    const encryptedUserId = this.computeEncryptedUserId(telegramUsername);
+    const encryptedUserIdHex = '0x' + Buffer.from(encryptedUserId).toString('hex');
+
+    // Single call to get user info and leaf
+    const userInfo = await this.contract.getUserInfo(encryptedUserIdHex);
+    const userIndex = Number(userInfo.userIndex);
+
     if (userIndex === 0) {
       return 0;
     }
 
-    const { leafIdx, position } = getUserLeafInfo(userIndex);
+    const { position } = getUserLeafInfo(userIndex);
 
-    // Get leaf from blockchain
-    const leaves = await this.contract.getLeaves([leafIdx]);
     const leaf: Leaf = {
-      encryptedBalances: leaves[0].encryptedBalances.map((b: string) => arrayify(b)),
-      idx: Number(leaves[0].idx),
-      nonce: Number(leaves[0].nonce)
+      encryptedBalances: userInfo.leaf.encryptedBalances.map((b: string) => arrayify(b)),
+      idx: Number(userInfo.leaf.idx),
+      nonce: Number(userInfo.leaf.nonce)
     };
 
     // Derive user's public key
@@ -139,22 +143,38 @@ export class ManagerContext {
   }
 
   /**
+   * Get the block range to process deposits from
+   * Returns [fromBlock, toBlock] based on contract state
+   */
+  async getBlockRangeToProcess(toBlock?: number): Promise<{ fromBlock: number; toBlock: number }> {
+    const context = await this.contract.getUpdateContext([]);
+    const lastProcessedBlock = Number(context.counters.lastProcessedBlock);
+
+    const fromBlock = lastProcessedBlock + 1;  // Resume from next block after last processed
+    const currentBlock = await this.contract.provider.getBlockNumber();
+    const endBlock = toBlock ?? currentBlock;
+
+    return { fromBlock, toBlock: endBlock };
+  }
+
+  /**
    * Create an UpdateBatch for calling doUpdate
    * Processes deposits, internal transactions, and payouts
    *
    * @param deposits - Deposits to process (from processDepositEvents)
    * @param transactions - Internal transfers between users
    * @param payouts - Withdrawals to Ethereum addresses
+   * @param nextBlockToProcess - The block height to resume from next time (manager's explicit decision)
    * @returns UpdateBatch ready for doUpdate call
    */
   async createUpdateBatch(
     deposits: DepositEvent[],
     transactions: InternalTransaction[],
-    payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>
+    payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>,
+    nextBlockToProcess: number
   ): Promise<UpdateBatch> {
     // Calculate balance deltas
     const balanceDeltas = new Map<string, number>();
-    const newUsers = new Set<string>();
 
     // Process deposits
     for (const deposit of deposits) {
@@ -162,12 +182,6 @@ export class ManagerContext {
         deposit.telegramUsername,
         (balanceDeltas.get(deposit.telegramUsername) || 0) + deposit.amount
       );
-
-      // Check if user is new
-      const userIndex = await this.getUserIndex(deposit.telegramUsername);
-      if (userIndex === 0) {
-        newUsers.add(deposit.telegramUsername);
-      }
     }
 
     // Process internal transactions
@@ -176,16 +190,57 @@ export class ManagerContext {
       balanceDeltas.set(tx.to, (balanceDeltas.get(tx.to) || 0) + tx.amount);
     }
 
-    // Get current balances for all affected users
+    // Get all affected users
     const affectedUsers = new Set([
       ...balanceDeltas.keys(),
       ...payouts.map(p => p.telegramUsername)
     ]);
 
+    // Batch fetch all user info and status in a single call
+    const encryptedUserIds = Array.from(affectedUsers).map(username =>
+      '0x' + Buffer.from(this.computeEncryptedUserId(username)).toString('hex')
+    );
+
+    const updateContext = await this.contract.getUpdateContext(encryptedUserIds);
+    const counters = updateContext.counters;
+    const userInfos = updateContext.userInfos;
+
+    // Build maps for current balances and user indices
     const currentBalances = new Map<string, number>();
-    for (const username of affectedUsers) {
-      const balance = await this.getBalanceFromChain(username);
-      currentBalances.set(username, balance);
+    const userIndices = new Map<string, number>();
+    const newUsers = new Set<string>();
+
+    let currentUserCount = Number(counters.userCount);
+
+    const affectedUsersArray = Array.from(affectedUsers);
+    for (let i = 0; i < affectedUsersArray.length; i++) {
+      const username = affectedUsersArray[i];
+      const userInfo = userInfos[i];
+      const userIndex = Number(userInfo.userIndex);
+
+      if (userIndex === 0) {
+        // New user
+        newUsers.add(username);
+        const newUserIndex = currentUserCount++;
+        userIndices.set(username, newUserIndex);
+        currentBalances.set(username, 0);
+      } else {
+        // Existing user - decrypt current balance
+        userIndices.set(username, userIndex);
+
+        const { position } = getUserLeafInfo(userIndex);
+        const leaf: Leaf = {
+          encryptedBalances: userInfo.leaf.encryptedBalances.map((b: string) => arrayify(b)),
+          idx: Number(userInfo.leaf.idx),
+          nonce: Number(userInfo.leaf.nonce)
+        };
+
+        const { publicKey: userPublicKey } = this.deriveUserKeypair(username);
+        const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+        const balance = decryptLeafBalance(leaf, position, sharedSecret);
+
+        currentBalances.set(username, balance);
+      }
     }
 
     // Apply deltas
@@ -193,7 +248,7 @@ export class ManagerContext {
       const newBalance = (currentBalances.get(username) || 0) + delta;
       if (newBalance < 0) {
         throw new Error(`Balance would go negative for ${username}: current=${currentBalances.get(username) || 0}, delta=${delta}`);
-      }
+      }      
       currentBalances.set(username, newBalance);
     }
 
@@ -204,7 +259,7 @@ export class ManagerContext {
 
       // Payout amount comes in full token decimals, need to convert to 2 decimals for balance tracking
       // For a 6-decimal token (like USDC), divide by 10^4 to get 2 decimals
-      const amountBigInt = BigInt(payout.amount.toString());
+      const amountBigInt = BigInt(payout.amount);
       const amountIn2Decimals = Number(amountBigInt / 10000n);
 
       if (balance < amountIn2Decimals) {
@@ -221,32 +276,25 @@ export class ManagerContext {
     const leafUpdates = new Map<number, Leaf>();
     const oldLeaves = new Map<number, Leaf>();
 
-    // Get current user count to assign indices to new users
-    const statusForUserCount = await this.contract.getStatus();
-    let currentUserCount = Number(statusForUserCount.counters.userCount.toString ? statusForUserCount.counters.userCount.toString() : statusForUserCount.counters.userCount);
-
-    // Assign indices to new users
-    const userIndices = new Map<string, number>();
+    // Collect unique leaf indices we need to load
+    const leafIndicesToLoad = new Set<number>();
     for (const username of currentBalances.keys()) {
-      let userIndex = await this.getUserIndex(username);
-      if (userIndex === 0) {
-        // This is a new user, assign them the next available index
-        userIndex = currentUserCount++;
-      }
-      userIndices.set(username, userIndex);
+      const userIndex = userIndices.get(username)!;
+      const { leafIdx } = getUserLeafInfo(userIndex);
+      leafIndicesToLoad.add(leafIdx);
     }
 
-    for (const [username, newBalance] of currentBalances) {
-      const userIndex = userIndices.get(username)!;
-      const { leafIdx, position } = getUserLeafInfo(userIndex);
+    // Batch load all required leaves
+    if (leafIndicesToLoad.size > 0) {
+      const leafIdxArray = Array.from(leafIndicesToLoad);
+      const leaves = await this.contract.getLeaves(leafIdxArray);
 
-      // Load current leaf from chain if not already loaded
-      if (!leafUpdates.has(leafIdx) && !oldLeaves.has(leafIdx)) {
-        const leaves = await this.contract.getLeaves([leafIdx]);
+      for (let i = 0; i < leafIdxArray.length; i++) {
+        const leafIdx = leafIdxArray[i];
         const oldLeaf: Leaf = {
-          encryptedBalances: leaves[0].encryptedBalances.map((b: string) => arrayify(b)),
-          idx: Number(leaves[0].idx),
-          nonce: Number(leaves[0].nonce)
+          encryptedBalances: leaves[i].encryptedBalances.map((b: string) => arrayify(b)),
+          idx: Number(leaves[i].idx),
+          nonce: Number(leaves[i].nonce)
         };
         oldLeaves.set(leafIdx, oldLeaf);
 
@@ -257,6 +305,11 @@ export class ManagerContext {
           nonce: oldLeaf.nonce + 1 // Increment nonce for each update
         });
       }
+    }
+
+    for (const [username, newBalance] of currentBalances) {
+      const userIndex = userIndices.get(username)!;
+      const { leafIdx, position } = getUserLeafInfo(userIndex);
 
       const leaf = leafUpdates.get(leafIdx)!;
 
@@ -285,21 +338,70 @@ export class ManagerContext {
       this.computeEncryptedUserId(username)
     );
 
-    // Get status for opStart
-    const status = await this.contract.getStatus();
-    const opStart = status.counters.processedOps;
+    // Use opStart from the batch call we already made
+    const opStart = counters.processedOps;
     const opCount = BigInt(deposits.length);
 
     // Build UpdateBatch
     const batch: UpdateBatch = {
       opStart,
       opCount,
+      nextBlock: BigInt(nextBlockToProcess),
       updates: Array.from(leafUpdates.values()),
       newUsers: newUserIds,
       payouts: payoutStructs
     };
 
     return batch;
+  }
+
+  /**
+   * Process all pending deposits with intelligent batch management
+   * Stateless operation: determines everything from on-chain state
+   *
+   * @param maxOpsPerBatch - Maximum number of deposits to process in one batch (default: 100)
+   * @returns UpdateBatch ready for doUpdate call, or null if nothing to process
+   */
+  async processAllPendingDeposits(maxOpsPerBatch: number = 100): Promise<UpdateBatch | null> {
+    const { fromBlock, toBlock } = await this.getBlockRangeToProcess();
+
+    if (fromBlock > toBlock) {
+      return null;  // Nothing to process
+    }
+
+    const allDeposits = await this.processDepositEvents(fromBlock, toBlock);
+
+    if (allDeposits.length === 0) {
+      return null;  // No deposits to process
+    }
+
+    // Take first maxOpsPerBatch deposits
+    const depositsToProcess = allDeposits.slice(0, maxOpsPerBatch);
+
+    // Determine nextBlock intelligently
+    let nextBlock: number;
+    const lastProcessedBlock = depositsToProcess[depositsToProcess.length - 1].blockNumber;
+
+    if (depositsToProcess.length < allDeposits.length) {
+      // We're processing a partial batch
+      // Check if there are more deposits in the same block as the last one we processed
+      const remainingDepositsInSameBlock = allDeposits
+        .slice(maxOpsPerBatch)
+        .some(d => d.blockNumber === lastProcessedBlock);
+
+      if (remainingDepositsInSameBlock) {
+        // Stay on the same block - we haven't finished processing it
+        nextBlock = lastProcessedBlock;
+      } else {
+        // Move to next block - we finished all deposits in lastProcessedBlock
+        nextBlock = lastProcessedBlock + 1;
+      }
+    } else {
+      // We processed all available deposits - advance to next block
+      nextBlock = lastProcessedBlock + 1;
+    }
+
+    return this.createUpdateBatch(depositsToProcess, [], [], nextBlock);
   }
 
   /**
@@ -324,7 +426,7 @@ export class ManagerContext {
 
     // Get current user count from contract
     const status = await this.contract.getStatus();
-    const userCount = Number(status.counters.userCount.toString ? status.counters.userCount.toString() : status.counters.userCount);
+    const userCount = Number(status.counters.userCount);
 
     return computeTranscript(batch, oldLeaves, userCount);
   }

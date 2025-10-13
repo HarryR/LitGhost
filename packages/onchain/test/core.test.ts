@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
-import { Dorp, MockToken } from "../src/contracts";
+import { LitGhost, MockToken } from "../src/contracts";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 // Ethers v5 imports
@@ -8,7 +8,7 @@ import { Web3Provider, JsonRpcSigner } from "@ethersproject/providers";
 import { Contract } from "@ethersproject/contracts";
 
 import {
-  Dorp as coreDorp,
+  LitGhost as coreLitGhost,
   Token as coreToken,
   ManagerContext,
   UserClient,
@@ -30,7 +30,7 @@ import {
  * - Payouts to Ethereum addresses
  */
 describe("Manager and User Integration (ethers v5)", function () {
-  let dorp: Dorp; // v6 typechain contract
+  let lg: LitGhost; // v6 typechain contract
   let token: MockToken; // v6 typechain contract
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
@@ -40,7 +40,7 @@ describe("Manager and User Integration (ethers v5)", function () {
   // Ethers v5 instances
   let v5Provider: Web3Provider;
   let v5Owner: JsonRpcSigner;
-  let v5Dorp: Contract;
+  let v5lg: Contract;
 
   // Manager keys
   let teePrivateKey: Uint8Array;
@@ -68,9 +68,9 @@ describe("Manager and User Integration (ethers v5)", function () {
     token = await MockTokenFactory.deploy("Mock USDC", "MUSDC", TOKEN_DECIMALS);
     await token.waitForDeployment();
 
-    const DorpFactory = await ethers.getContractFactory("Dorp");
-    dorp = await DorpFactory.deploy(await token.getAddress(), owner.address);
-    await dorp.waitForDeployment();
+    const LitGhostFactory = await ethers.getContractFactory("LitGhost");
+    lg = await LitGhostFactory.deploy(await token.getAddress(), owner.address);
+    await lg.waitForDeployment();
 
     // Mint tokens to users
     await token.mint(user1.address, INITIAL_BALANCE);
@@ -85,12 +85,12 @@ describe("Manager and User Integration (ethers v5)", function () {
     v5Owner = v5Provider.getSigner(0);
 
     // Create ethers v5 contract instances
-    const dorpAddress = await dorp.getAddress();
+    const lgAddress = await lg.getAddress();
 
-    v5Dorp = coreDorp.connect(v5Owner).attach(dorpAddress);
+    v5lg = coreLitGhost.connect(v5Owner).attach(lgAddress);
 
     // Create manager context
-    manager = new ManagerContext(teePrivateKey, userMasterKey, v5Dorp);
+    manager = new ManagerContext(teePrivateKey, userMasterKey, v5lg);
   });
 
   describe("Manager Utilities", function () {
@@ -104,8 +104,8 @@ describe("Manager and User Integration (ethers v5)", function () {
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
       };
 
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       // Manager processes deposit events
       const deposits = await manager.processDepositEvents();
@@ -147,19 +147,24 @@ describe("Manager and User Integration (ethers v5)", function () {
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
         };
 
-        await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-        await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
       }
 
       // Manager processes deposits
       const deposits = await manager.processDepositEvents();
       expect(deposits).to.have.length(3);
 
+      // Determine nextBlock (last deposit block + 1)
+      const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
+      const nextBlock = lastDepositBlock + 1;
+
       // Manager creates update batch
-      const batch = await manager.createUpdateBatch(deposits, [], []);
+      const batch = await manager.createUpdateBatch(deposits, [], [], nextBlock);
 
       expect(batch.opCount).to.equal(3n);
       expect(batch.newUsers).to.have.length(3);
+      expect(batch.nextBlock).to.equal(BigInt(nextBlock));
 
       // Compute transcript
       const transcript = await manager.computeTranscriptForBatch(batch);
@@ -176,9 +181,10 @@ describe("Manager and User Integration (ethers v5)", function () {
       const payoutsSol = batch.payouts.map(p => ({ toWho: p.toWho, amount: p.amount }));
 
       // Execute update via v5 contract
-      await v5Dorp.doUpdate(
+      await v5lg.doUpdate(
         batch.opStart,
         batch.opCount,
+        batch.nextBlock,
         updatesSol,
         newUsersSol,
         payoutsSol,
@@ -206,13 +212,14 @@ describe("Manager and User Integration (ethers v5)", function () {
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
         };
 
-        await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-        await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
       }
 
       // Manager processes initial deposits
       const deposits = await manager.processDepositEvents();
-      const batch1 = await manager.createUpdateBatch(deposits, [], []);
+      const lastDepositBlock1 = Math.max(...deposits.map(d => d.blockNumber));
+      const batch1 = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       const updatesSol1 = batch1.updates.map(leaf => ({
@@ -221,9 +228,10 @@ describe("Manager and User Integration (ethers v5)", function () {
         nonce: leaf.nonce
       }));
 
-      await v5Dorp.doUpdate(
+      await v5lg.doUpdate(
         batch1.opStart,
         batch1.opCount,
+        batch1.nextBlock,
         updatesSol1,
         batch1.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
         [],
@@ -235,7 +243,9 @@ describe("Manager and User Integration (ethers v5)", function () {
         { from: "alice", to: "bob", amount: 30_00 }
       ];
 
-      const batch2 = await manager.createUpdateBatch([], transactions, []);
+      // Internal transfer - no new deposits, stay at current block
+      const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
+      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
       const transcript2 = await manager.computeTranscriptForBatch(batch2);
 
       const updatesSol2 = batch2.updates.map(leaf => ({
@@ -244,9 +254,10 @@ describe("Manager and User Integration (ethers v5)", function () {
         nonce: leaf.nonce
       }));
 
-      await v5Dorp.doUpdate(
+      await v5lg.doUpdate(
         batch2.opStart,
         batch2.opCount,
+        batch2.nextBlock,
         updatesSol2,
         [],
         [],
@@ -261,7 +272,6 @@ describe("Manager and User Integration (ethers v5)", function () {
       expect(bobBalance).to.equal(130_00);  // 100 + 30
     });
 
-    /*
     it("Should handle payouts to Ethereum addresses", async function () {
       const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
 
@@ -272,17 +282,19 @@ describe("Manager and User Integration (ethers v5)", function () {
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
       };
 
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       // Manager processes deposit
       const deposits = await manager.processDepositEvents();
-      const batch1 = await manager.createUpdateBatch(deposits, [], []);
+      const lastDepositBlock1 = Math.max(...deposits.map(d => d.blockNumber));
+      const batch1 = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
-      await dorp.connect(owner).doUpdate(
+      await v5lg.connect(v5Owner).doUpdate(
         batch1.opStart,
         batch1.opCount,
+        batch1.nextBlock,
         batch1.updates.map(leaf => ({
           encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
           idx: leaf.idx,
@@ -300,21 +312,14 @@ describe("Manager and User Integration (ethers v5)", function () {
       ];
 
       const balanceBefore = await token.balanceOf(user2.address);
-
-      const batch2 = await manager.createUpdateBatch([], [], payouts);
-
-      // Debug: log batch details
-      console.log('batch2.updates.length:', batch2.updates.length);
-      console.log('batch2.payouts.length:', batch2.payouts.length);
-      if (batch2.payouts.length > 0) {
-        console.log('Payout amount type:', typeof batch2.payouts[0].amount, 'value:', batch2.payouts[0].amount);
-      }
-
+      const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
+      const batch2 = await manager.createUpdateBatch([], [], payouts, currentBlock2 + 1);
       const transcript2 = await manager.computeTranscriptForBatch(batch2);
 
-      await v5Dorp.doUpdate(
+      await v5lg.doUpdate(
         batch2.opStart,
         batch2.opCount,
+        batch2.nextBlock,
         batch2.updates.map(leaf => ({
           encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
           idx: leaf.idx,
@@ -333,8 +338,60 @@ describe("Manager and User Integration (ethers v5)", function () {
       const aliceBalance = await manager.getBalanceFromChain("alice");
       expect(aliceBalance).to.equal(50_00); // 100 - 50
     });
-    */
   });  
+
+  describe("Block Height Tracking", function () {
+    it("Should track lastProcessedBlock correctly and support stateless resume", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Create multiple deposits
+      const usernames = ["dave", "eve", "frank"];
+      for (const username of usernames) {
+        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const depositToSol = {
+          rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+          user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+        };
+
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+      }
+
+      // Get all deposits
+      const deposits = await manager.processDepositEvents();
+      expect(deposits).to.have.length(3);
+
+      // Process all deposits but specify an arbitrary nextBlock
+      const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
+      const nextBlock = lastDepositBlock + 5; // Arbitrary future block
+
+      const batch = await manager.createUpdateBatch(deposits, [], [], nextBlock);
+      const transcript = await manager.computeTranscriptForBatch(batch);
+
+      await v5lg.doUpdate(
+        batch.opStart,
+        batch.opCount,
+        batch.nextBlock,
+        batch.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript).toString("hex")
+      );
+
+      // Verify lastProcessedBlock was updated to nextBlock
+      const status = await lg.getStatus();
+      expect(status.counters.lastProcessedBlock).to.equal(nextBlock);
+      expect(status.counters.processedOps).to.equal(3);
+
+      // Verify stateless resume works - should start from nextBlock + 1
+      const { fromBlock } = await manager.getBlockRangeToProcess();
+      expect(fromBlock).to.equal(nextBlock + 1);
+    });
+  });
 
   describe("User Client", function () {
     it("Should allow users to query their balances", async function () {
@@ -347,17 +404,19 @@ describe("Manager and User Integration (ethers v5)", function () {
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
       };
 
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       // Manager processes and updates
       const deposits = await manager.processDepositEvents();
-      const batch = await manager.createUpdateBatch(deposits, [], []);
+      const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
+      const batch = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
       const transcript = await manager.computeTranscriptForBatch(batch);
 
-      await v5Dorp.doUpdate(
+      await v5lg.doUpdate(
         batch.opStart,
         batch.opCount,
+        batch.nextBlock,
         batch.updates.map(leaf => ({
           encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
           idx: leaf.idx,
@@ -376,75 +435,12 @@ describe("Manager and User Integration (ethers v5)", function () {
         userKeypair.privateKey,
         encryptedUserId,
         teePublicKey,
-        v5Dorp
+        v5lg
       );
 
       // Query balance
       const balance = await userClient.getBalance();
       expect(balance).to.equal(100_00);
     });
-
-    /*
-    it("Should allow users to watch balance updates with async generator", async function () {
-      this.timeout(10000);
-
-      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
-
-      // Alice deposits
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
-      const depositToSol = {
-        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
-        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
-      };
-
-      await token.connect(user1).approve(await dorp.getAddress(), depositAmount);
-      await dorp.connect(user1).depositERC20(depositToSol, depositAmount);
-
-      // Manager processes and updates
-      const deposits = await manager.processDepositEvents();
-      const batch = await manager.createUpdateBatch(deposits, [], []);
-      const transcript = await manager.computeTranscriptForBatch(batch);
-
-      await v5Dorp.doUpdate(
-        batch.opStart,
-        batch.opCount,
-        batch.updates.map(leaf => ({
-          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
-          idx: leaf.idx,
-          nonce: leaf.nonce
-        })),
-        batch.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
-        [],
-        "0x" + Buffer.from(transcript).toString("hex")
-      );
-
-      // User client setup
-      const userKeypair = deriveUserKeypair("alice", userMasterKey);
-      const encryptedUserId = manager.computeEncryptedUserId("alice");
-
-      const userClient = new UserClient(
-        userKeypair.privateKey,
-        encryptedUserId,
-        teePublicKey,
-        v5Dorp
-      );
-
-      // Watch balance updates (historical)
-      const startBlock = await v5Provider.getBlockNumber();
-      const updates: BalanceUpdate[] = [];
-
-      for await (const update of userClient.watchBalanceUpdates({
-        fromBlock: startBlock - 10,
-        maxEvents: 5,
-        timeoutMs: 5000
-      })) {
-        updates.push(update);
-      }
-
-      expect(updates).to.have.length(1);
-      expect(updates[0].balance).to.equal(100_00);
-      expect(updates[0].nonce).to.equal(1);
-    });
-    */
   });
 });

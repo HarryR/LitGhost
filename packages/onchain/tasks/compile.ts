@@ -14,21 +14,21 @@ task("compile", "Compiles contracts and copies ABIs to core package").setAction(
     // Ensure target directory exists
     fs.mkdirSync(targetPath, { recursive: true });
 
-    // Copy Dorp ABI
-    const dorpArtifactPath = path.join(
+    // Copy LitGhost ABI
+    const lgArtifactPath = path.join(
       artifactsPath,
-      "Dorp.sol/Dorp.json"
+      "LitGhost.sol/LitGhost.json"
     );
 
-    if (fs.existsSync(dorpArtifactPath)) {
-      const dorpArtifact = JSON.parse(
-        fs.readFileSync(dorpArtifactPath, "utf-8")
+    if (fs.existsSync(lgArtifactPath)) {
+      const lgArtifact = JSON.parse(
+        fs.readFileSync(lgArtifactPath, "utf-8")
       );
       fs.writeFileSync(
-        path.join(targetPath, "Dorp.json"),
-        JSON.stringify(dorpArtifact.abi, null, 2)
+        path.join(targetPath, "LitGhost.json"),
+        JSON.stringify(lgArtifact.abi, null, 2)
       );
-      console.log("✓ Copied Dorp ABI to core/src/abis/");
+      console.log("✓ Copied LitGhost ABI to core/src/abis/");
     }
 
     // Copy MockToken ABI
