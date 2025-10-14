@@ -39,12 +39,12 @@ export interface InternalTransaction {
 
 /**
  * Represents an operation that was skipped during processing
- * Used to track deposits/transfers that couldn't be processed due to validation errors
+ * Used to track deposits/transfers/payouts that couldn't be processed due to validation errors
  */
 export interface SkippedOperation {
-  type: 'deposit' | 'transfer';
+  type: 'deposit' | 'transfer' | 'payout';
   reason: string;
-  details: any; // DepositEvent or InternalTransaction or partial event data
+  details: any; // DepositEvent or InternalTransaction or payout object or partial event data
 }
 
 const NAMESPACE_CHAFF = "LitGhost.chaff";
@@ -181,13 +181,21 @@ export class ManagerContext {
    *
    * Special case: Refund payouts (with empty telegramUsername) don't deduct from balances
    * as they're refunding deposits that were never credited due to overflow
+   *
+   * Graceful handling: Payouts with insufficient balance are skipped and tracked in skippedOperations
+   * This ensures the manager never halts due to invalid payout requests
    */
   private processPayouts(
     currentBalances: Map<string, number>,
     payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>
-  ): { updatedBalances: Map<string, number>; payoutStructs: Payout[] } {
+  ): {
+    updatedBalances: Map<string, number>;
+    payoutStructs: Payout[];
+    skippedPayouts: SkippedOperation[];
+  } {
     const updatedBalances = new Map(currentBalances);
     const payoutStructs: Payout[] = [];
+    const skippedPayouts: SkippedOperation[] = [];
 
     for (const payout of payouts) {
       const amountBigInt = BigInt(payout.amount);
@@ -210,9 +218,13 @@ export class ManagerContext {
       const amountIn2Decimals = Number(amountBigInt / 10000n);
 
       if (balance < amountIn2Decimals) {
-        throw new Error(
-          `Insufficient balance for ${payout.telegramUsername}: has ${balance}, needs ${amountIn2Decimals} (payout ${payout.amount})`
-        );
+        // Skip payout with insufficient balance - don't halt the manager
+        skippedPayouts.push({
+          type: 'payout' as const,
+          reason: `Insufficient balance: has ${balance}, needs ${amountIn2Decimals}`,
+          details: payout
+        });
+        continue;
       }
 
       updatedBalances.set(payout.telegramUsername, balance - amountIn2Decimals);
@@ -222,7 +234,7 @@ export class ManagerContext {
       });
     }
 
-    return { updatedBalances, payoutStructs };
+    return { updatedBalances, payoutStructs, skippedPayouts };
   }
 
   /**
@@ -820,7 +832,7 @@ export class ManagerContext {
     const updatedBalances = this.applyBalanceDeltas(currentBalances, balanceDeltas);
 
     // Step 7: Process payouts (convert decimals, validate, deduct from balances)
-    const { updatedBalances: finalBalances, payoutStructs } =
+    const { updatedBalances: finalBalances, payoutStructs, skippedPayouts } =
       this.processPayouts(updatedBalances, allPayouts);
 
     // Step 8: Filter final balances to only include users actually affected by valid operations
@@ -896,14 +908,15 @@ export class ManagerContext {
       payouts: payoutStructs
     };
 
-    // Step 13: Combine all skipped operations (invalid deposits + invalid transfers)
+    // Step 13: Combine all skipped operations (invalid deposits + invalid transfers + insufficient balance payouts)
     const allSkippedOperations: SkippedOperation[] = [
       ...skippedOperations,
       ...invalidDeposits.map(inv => ({
         type: 'deposit' as const,
         reason: inv.reason,
         details: inv.event
-      }))
+      })),
+      ...skippedPayouts
     ];
 
     return { batch, skippedOperations: allSkippedOperations };

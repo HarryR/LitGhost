@@ -220,6 +220,8 @@ contract LitGhost {
     {
         (uint32 leafAmount, uint256 leafDust) = _convertToTwoDecimals(in_amount, m_decimals);
 
+        require( leafAmount < ((2**32)*(10**DECIMALS)), "401!" );
+
         if( leafDust > 0 )
         {
             m_dust += leafDust;
