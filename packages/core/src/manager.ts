@@ -1,4 +1,4 @@
-import { arrayify, Contract } from './ethers-compat.js';
+import { arrayify, Contract, keccak256 } from './ethers-compat.js';
 import {
   decryptDepositTo,
   getUserLeafInfo,
@@ -12,6 +12,7 @@ import {
   deriveUserKeypair,
   computeSharedSecret,
   namespacedHmac,
+  decodeUint32,
 } from './utils';
 import { computeTranscript, type UpdateBatch, type Payout } from './transcript';
 
@@ -23,6 +24,7 @@ export interface DepositEvent {
   telegramUsername: string;
   amount: number;
   blockNumber: number;
+  depositorAddress: string; // For refunds on balance overflow
 }
 
 /**
@@ -34,6 +36,9 @@ export interface InternalTransaction {
   amount: number;
 }
 
+const NAMESPACE_CHAFF = "LitGhost.chaff";
+const MAX_BALANCE = 4294967295; // uint32 max
+
 /**
  * Manager context for stateless operation
  * All state is derived from on-chain data + master keys
@@ -43,7 +48,6 @@ export class ManagerContext {
     private teePrivateKey: Uint8Array,
     private userMasterKey: Uint8Array,
     private contract: Contract,
-    private chaffSecret: string = 'LitGhost.chaff.default',
     private chaffMultiplier: number = 3
   ) {}
 
@@ -73,23 +77,18 @@ export class ManagerContext {
     // Calculate target number of chaff leaves
     const targetChaffCount = realLeafIndices.size * this.chaffMultiplier;
 
-    // Base data for hashing: chaffSecret + opStart + opCount
-    const baseData = Buffer.concat([
-      Buffer.from(this.chaffSecret, 'utf8'),
+    // Base data for hashing: chaffSecret + opStart + opCount    
+    let chaffSecret = namespacedHmac(this.teePrivateKey, NAMESPACE_CHAFF, Buffer.concat([
       Buffer.from(opStart.toString()),
       Buffer.from(opCount.toString())
-    ]);
+    ]));
 
     let counter = 0;
     const maxAttempts = targetChaffCount * 10; // Prevent infinite loops
 
     while (chaffLeaves.size < targetChaffCount && counter < maxAttempts) {
-      // Hash: HMAC(teePrivateKey, namespace, baseData || counter)
-      const data = Buffer.concat([baseData, Buffer.from(counter.toString())]);
-      const hash = namespacedHmac(this.teePrivateKey, 'LitGhost.chaff.selection', data);
-
-      // Convert first 4 bytes to a number and take modulo totalLeafCount
-      const hashValue = new DataView(hash.buffer, hash.byteOffset, 4).getUint32(0, false);
+      chaffSecret = arrayify(keccak256(chaffSecret));
+      const hashValue = decodeUint32(chaffSecret.slice(0, 4));
       const leafIndex = hashValue % totalLeafCount;
 
       // Only add if it's not a real leaf and not already selected
@@ -105,8 +104,44 @@ export class ManagerContext {
   }
 
   /**
+   * Validate a balance against system constraints
+   * Balances are stored as uint32 with 2 decimal places
+   *
+   * Constraints:
+   * - Must be non-negative (>= 0)
+   * - Must fit in uint32 (< 2^32 = 4,294,967,296)
+   * - Effective max balance: 42,949,672.95 (about 42M with 2 decimals)
+   *
+   * @param balance - Balance to validate (in 2-decimal format)
+   * @param context - Context for error message (e.g., "alice after deposit")
+   * @throws Error if balance violates constraints
+   */
+  private validateBalance(balance: number, context: string): void {
+    if (balance < 0) {
+      throw new Error(
+        `Balance constraint violation: negative balance for ${context}: ${balance}`
+      );
+    }
+
+    if (balance > MAX_BALANCE) {
+      throw new Error(
+        `Balance constraint violation: overflow for ${context}: ${balance} exceeds max ${MAX_BALANCE} (${(MAX_BALANCE / 100).toFixed(2)} tokens)`
+      );
+    }
+
+    if (!Number.isInteger(balance)) {
+      throw new Error(
+        `Balance constraint violation: non-integer balance for ${context}: ${balance}`
+      );
+    }
+  }
+
+  /**
    * Apply balance deltas and validate constraints
    * Returns updated balance map
+   *
+   * This performs fail-fast validation: if ANY balance would violate constraints,
+   * the entire operation is rejected. This ensures atomicity.
    */
   private applyBalanceDeltas(
     currentBalances: Map<string, number>,
@@ -115,12 +150,14 @@ export class ManagerContext {
     const updatedBalances = new Map(currentBalances);
 
     for (const [username, delta] of balanceDeltas) {
-      const newBalance = (updatedBalances.get(username) || 0) + delta;
-      if (newBalance < 0) {
-        throw new Error(
-          `Balance would go negative for ${username}: current=${updatedBalances.get(username) || 0}, delta=${delta}`
-        );
-      }
+      const currentBalance = updatedBalances.get(username) || 0;
+      const newBalance = currentBalance + delta;
+
+      this.validateBalance(
+        newBalance,
+        `${username} after delta ${delta >= 0 ? '+' : ''}${delta} (current: ${currentBalance})`
+      );
+
       updatedBalances.set(username, newBalance);
     }
 
@@ -130,6 +167,9 @@ export class ManagerContext {
   /**
    * Process payouts and generate payout structs
    * Deducts amounts from balances and returns Payout array
+   *
+   * Special case: Refund payouts (with empty telegramUsername) don't deduct from balances
+   * as they're refunding deposits that were never credited due to overflow
    */
   private processPayouts(
     currentBalances: Map<string, number>,
@@ -139,11 +179,23 @@ export class ManagerContext {
     const payoutStructs: Payout[] = [];
 
     for (const payout of payouts) {
+      const amountBigInt = BigInt(payout.amount);
+
+      // Refund payouts (empty username) don't deduct from balances
+      // They refund deposits that were never credited due to overflow
+      if (payout.telegramUsername === '') {
+        payoutStructs.push({
+          toWho: payout.toAddress,
+          amount: amountBigInt
+        });
+        continue;
+      }
+
+      // Normal user withdrawal - deduct from balance
       const balance = updatedBalances.get(payout.telegramUsername) || 0;
 
       // Payout amount comes in full token decimals, need to convert to 2 decimals for balance tracking
       // For a 6-decimal token (like USDC), divide by 10^4 to get 2 decimals
-      const amountBigInt = BigInt(payout.amount);
       const amountIn2Decimals = Number(amountBigInt / 10000n);
 
       if (balance < amountIn2Decimals) {
@@ -165,19 +217,16 @@ export class ManagerContext {
   /**
    * Get the user's public key from their telegram username
    * This is now what's stored in m_userIndices and m_indexToUser mappings
+   *
+   * Note: This performs secp256k1 ECDH operations and takes ~0.5-2ms per call.
+   * Consider caching results when processing the same user multiple times.
    */
   getUserPublicKey(telegramUsername: string): Uint8Array {
-    return this.deriveUserKeypair(telegramUsername).publicKey;
+    return deriveUserKeypair(telegramUsername, this.userMasterKey).publicKey;
   }
 
   /**
-   * Derive a user's long-term keypair deterministically
-   */
-  deriveUserKeypair(telegramUsername: string): { privateKey: Uint8Array; publicKey: Uint8Array } {
-    return deriveUserKeypair(telegramUsername, this.userMasterKey);
-  }
-
-  /**
+   * MAKES CONTRACT CALLS
    * Get a user's current user index from the blockchain
    * Returns 0 if user doesn't exist yet
    */
@@ -191,6 +240,7 @@ export class ManagerContext {
   }
 
   /**
+   * MAKES CONTRACT CALLS
    * Get a user's current balance from the blockchain
    * Returns 0 if user doesn't exist or has no balance
    */
@@ -214,27 +264,43 @@ export class ManagerContext {
       nonce: Number(userInfo.leaf.nonce)
     };
 
-
     // Compute shared secret for balance decryption
     const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
-
-    // Decrypt balance
-    const balance = decryptLeafBalance(leaf, position, sharedSecret);
-    return balance;
+    return decryptLeafBalance(leaf, position, sharedSecret);
   }
 
   /**
-   * Process OpDeposit events from the blockchain
+   * MAKES CONTRACT CALLS
+   * Process OpDeposit events from the blockchain in a given block range
    * Decrypts telegram usernames and extracts deposit information
+   *
+   * @param fromBlock - Starting block number (inclusive)
+   * @param toBlock - Ending block number (inclusive) or 'latest'
+   * @param lastProcessedOpIndex - Skip deposits with opIndex <= this value
+   * @returns Array of deposit events (filtered and decrypted)
    */
-  async processDepositEvents(fromBlock?: number, toBlock?: number): Promise<DepositEvent[]> {
+  async processDepositEvents(
+    fromBlock: number,
+    toBlock: number | string,
+    lastProcessedOpIndex: bigint
+  ): Promise<DepositEvent[]> {
     const filter = this.contract.filters.OpDeposit();
     const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
 
     const deposits: DepositEvent[] = [];
 
     for (const event of events) {
+      // Skip removed events (chain reorgs)
+      if (event.removed) {
+        continue;
+      }
+
       const args = event.args!;
+
+      // Skip already processed operations
+      if (args.idx <= lastProcessedOpIndex) {
+        continue;
+      }
 
       // Reconstruct DepositTo
       const depositTo: DepositTo = {
@@ -245,11 +311,15 @@ export class ManagerContext {
       // Decrypt telegram username
       const telegramUsername = decryptDepositTo(depositTo, this.teePrivateKey);
 
+      // Extract depositor address for potential refunds
+      const depositorAddress = args.from;
+
       deposits.push({
         opIndex: args.idx,
         telegramUsername,
         amount: Number(args.amount),
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        depositorAddress
       });
     }
 
@@ -257,6 +327,7 @@ export class ManagerContext {
   }
 
   /**
+   * MAKES CONTRACT CALLS
    * Get the block range to process deposits from
    * Returns [fromBlock, toBlock] based on contract state
    */
@@ -272,29 +343,81 @@ export class ManagerContext {
   }
 
   /**
-   * Helper: Compute balance deltas from deposits and internal transactions
+   * Helper: Compute balance deltas from deposits and internal transactions with overflow handling
+   *
+   * Overflow handling strategy:
+   * - Deposits: Cap at MAX_BALANCE, generate refund payout for excess back to depositor
+   * - Internal transfers: Cap transfer amount to what recipient can receive (no refund needed)
+   *
+   * @returns Object with balance deltas and auto-generated refund payouts
    */
-  private computeBalanceDeltas(
+  private computeBalanceDeltasWithOverflowHandling(
     deposits: DepositEvent[],
-    transactions: InternalTransaction[]
-  ): Map<string, number> {
+    transactions: InternalTransaction[],
+    currentBalances: Map<string, number>
+  ): {
+    balanceDeltas: Map<string, number>;
+    autoRefundPayouts: Array<{ toAddress: string; amount: bigint }>;
+  } {
     const balanceDeltas = new Map<string, number>();
+    const autoRefundPayouts: Array<{ toAddress: string; amount: bigint }> = [];
 
-    // Process deposits
+    // Process deposits with overflow detection
     for (const deposit of deposits) {
-      balanceDeltas.set(
-        deposit.telegramUsername,
-        (balanceDeltas.get(deposit.telegramUsername) || 0) + deposit.amount
-      );
+      const currentBalance = currentBalances.get(deposit.telegramUsername) || 0;
+      const cumulativeDelta = balanceDeltas.get(deposit.telegramUsername) || 0;
+      const proposedBalance = currentBalance + cumulativeDelta + deposit.amount;
+
+      if (proposedBalance > MAX_BALANCE) {
+        // Cap at max, refund excess
+        const roomAvailable = MAX_BALANCE - (currentBalance + cumulativeDelta);
+        const accepted = Math.max(0, roomAvailable);
+        const excess = deposit.amount - accepted;
+
+        if (accepted > 0) {
+          balanceDeltas.set(
+            deposit.telegramUsername,
+            cumulativeDelta + accepted
+          );
+        }
+
+        // Generate refund payout for excess (convert 2 decimals back to 6 decimals)
+        if (excess > 0) {
+          const refundAmountFullDecimals = BigInt(excess) * 10000n;
+          autoRefundPayouts.push({
+            toAddress: deposit.depositorAddress,
+            amount: refundAmountFullDecimals
+          });
+        }
+      } else {
+        balanceDeltas.set(
+          deposit.telegramUsername,
+          cumulativeDelta + deposit.amount
+        );
+      }
     }
 
-    // Process internal transactions
+    // Process internal transactions with automatic capping
     for (const tx of transactions) {
-      balanceDeltas.set(tx.from, (balanceDeltas.get(tx.from) || 0) - tx.amount);
-      balanceDeltas.set(tx.to, (balanceDeltas.get(tx.to) || 0) + tx.amount);
+      const senderBalance =
+        (currentBalances.get(tx.from) || 0) + (balanceDeltas.get(tx.from) || 0);
+      const recipientBalance =
+        (currentBalances.get(tx.to) || 0) + (balanceDeltas.get(tx.to) || 0);
+
+      // Cap transfer amount to what recipient can receive
+      const maxCanReceive = MAX_BALANCE - recipientBalance;
+      const cappedByRecipient = Math.min(tx.amount, maxCanReceive);
+
+      // Also cap by sender's available balance (prevent negative)
+      const actualTransfer = Math.min(cappedByRecipient, senderBalance);
+
+      if (actualTransfer > 0) {
+        balanceDeltas.set(tx.from, (balanceDeltas.get(tx.from) || 0) - actualTransfer);
+        balanceDeltas.set(tx.to, (balanceDeltas.get(tx.to) || 0) + actualTransfer);
+      }
     }
 
-    return balanceDeltas;
+    return { balanceDeltas, autoRefundPayouts };
   }
 
   /**
@@ -342,7 +465,7 @@ export class ManagerContext {
           nonce: Number(userInfo.leaf.nonce)
         };
 
-        const { publicKey: userPublicKey } = this.deriveUserKeypair(username);
+        const userPublicKey = this.getUserPublicKey(username);
         const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
         const balance = decryptLeafBalance(leaf, position, sharedSecret);
 
@@ -382,7 +505,6 @@ export class ManagerContext {
       opStart,
       opCount
     );
-
 
     // Combine all leaf indices (real + chaff)
     const allLeafIndices = new Set([...realLeafIndices, ...chaffLeafIndices]);
@@ -426,7 +548,7 @@ export class ManagerContext {
     // First, add public keys for users we already know (from affected users in this batch)
     const userIndexToPublicKey = new Map<number, Uint8Array>();
     for (const [username, userIdx] of userIndices) {
-      const { publicKey } = this.deriveUserKeypair(username);
+      const publicKey = this.getUserPublicKey(username);
       userIndexToPublicKey.set(userIdx, publicKey);
     }
 
@@ -451,14 +573,11 @@ export class ManagerContext {
         const userIdx = unknownUserIndices[i];
         // Verify we got a valid public key (not zeros)
         if (pk.some(byte => byte !== 0)) {
-          // DEBUG: Check if this matches what we would derive locally
-          // We don't know the username for this userIdx, so we can't verify here
           userIndexToPublicKey.set(userIdx, pk);
         } else {
         }
       }
     }
-
 
     return { leaves, userIndexToPublicKey };
   }
@@ -555,6 +674,7 @@ export class ManagerContext {
   }
 
   /**
+   * MAKES CONTRACT CALLS
    * Create an UpdateBatch for calling doUpdate
    * Processes deposits, internal transactions, and payouts
    *
@@ -570,31 +690,46 @@ export class ManagerContext {
     payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>,
     nextBlockToProcess: number
   ): Promise<UpdateBatch> {
-    // Step 1: Calculate balance deltas from deposits and transactions
-    const balanceDeltas = this.computeBalanceDeltas(deposits, transactions);
-
-    // Step 2: Get all affected users (from deltas and payouts)
-    const affectedUsers = new Set([
-      ...balanceDeltas.keys(),
+    // Step 1: Get preliminary affected users (to fetch current balances)
+    const preliminaryAffectedUsers = new Set([
+      ...deposits.map(d => d.telegramUsername),
+      ...transactions.flatMap(t => [t.from, t.to]),
       ...payouts.map(p => p.telegramUsername)
     ]);
 
-    // Step 3: Batch fetch all user info and status in a single RPC call
-    const userPublicKeys = Array.from(affectedUsers).map(username =>
+    // Step 2: Batch fetch user info to get current balances
+    const userPublicKeys = Array.from(preliminaryAffectedUsers).map(username =>
       '0x' + Buffer.from(this.getUserPublicKey(username)).toString('hex')
     );
     const updateContext = await this.contract.getUpdateContext(userPublicKeys);
 
-    // Step 4: Build user state map (indices, balances, identify new users)
+    // Step 3: Build preliminary user state map
     const { currentBalances, userIndices, newUsers, originalUserCount, currentUserCount } =
-      this.buildUserStateMap(affectedUsers, updateContext.userInfos, updateContext.counters);
+      this.buildUserStateMap(preliminaryAffectedUsers, updateContext.userInfos, updateContext.counters);
 
-    // Step 5: Apply balance deltas and validate constraints
+    // Step 4: Calculate balance deltas WITH overflow handling (generates auto-refund payouts)
+    const { balanceDeltas, autoRefundPayouts } = this.computeBalanceDeltasWithOverflowHandling(
+      deposits,
+      transactions,
+      currentBalances
+    );
+
+    // Step 5: Merge auto-refund payouts with user-requested payouts
+    const allPayouts = [
+      ...autoRefundPayouts.map(r => ({
+        telegramUsername: '', // Not used for refunds - empty username
+        toAddress: r.toAddress,
+        amount: r.amount
+      })),
+      ...payouts
+    ];
+
+    // Step 6: Apply balance deltas and validate constraints
     const updatedBalances = this.applyBalanceDeltas(currentBalances, balanceDeltas);
 
-    // Step 6: Process payouts (convert decimals, validate, deduct from balances)
+    // Step 7: Process payouts (convert decimals, validate, deduct from balances)
     const { updatedBalances: finalBalances, payoutStructs } =
-      this.processPayouts(updatedBalances, payouts);
+      this.processPayouts(updatedBalances, allPayouts);
 
     // Step 7: Extract operation counters for deterministic chaff selection
     const opStart = updateContext.counters.processedOps;
@@ -644,52 +779,127 @@ export class ManagerContext {
   }
 
   /**
-   * Process all pending deposits with intelligent batch management
-   * Stateless operation: determines everything from on-chain state
+   * MAKES CONTRACT CALLS
+   * Collect pending deposits with time-limited block scanning
+   * Designed for time-limited cron jobs (30s execution window)
    *
-   * @param maxOpsPerBatch - Maximum number of deposits to process in one batch (default: 100)
-   * @returns UpdateBatch ready for doUpdate call, or null if nothing to process
+   * Strategy:
+   * - Iteratively scans blocks in chunks until time budget exhausted, current block reached, or maxDeposits collected
+   * - Returns deposits and recommended nextBlock cursor position
+   * - This prevents having to scan weeks of blocks after periods of inactivity
+   *
+   * @param maxDeposits - Maximum number of deposits to collect (default: 10)
+   * @param blockChunkSize - Number of blocks to fetch per iteration (default: 1000)
+   * @param timeBudgetMs - Maximum time to spend scanning for deposits in milliseconds (default: 5000ms = 5s)
+   * @returns Object with deposits array and nextBlock cursor position
    */
-  async processAllPendingDeposits(maxOpsPerBatch: number = 100): Promise<UpdateBatch | null> {
-    const { fromBlock, toBlock } = await this.getBlockRangeToProcess();
+  async collectPendingDeposits(
+    maxDeposits: number = 10,
+    blockChunkSize: number = 1000,
+    timeBudgetMs: number = 5000
+  ): Promise<{ deposits: DepositEvent[], nextBlock: number }> {
+    const startTime = Date.now();
 
-    if (fromBlock > toBlock) {
-      return null;  // Nothing to process
+    // Get current state from contract
+    const context = await this.contract.getUpdateContext([]);
+    const lastProcessedBlock = Number(context.counters.lastProcessedBlock);
+    const lastProcessedOpIndex = context.counters.processedOps;
+    const currentBlock = await this.contract.provider.getBlockNumber();
+
+    // If we're already caught up, return empty deposits and advance cursor to current block
+    if (lastProcessedBlock >= currentBlock) {
+      return { deposits: [], nextBlock: currentBlock };
     }
 
-    const allDeposits = await this.processDepositEvents(fromBlock, toBlock);
+    // Iteratively fetch deposits in chunks until we hit one of our limits
+    const collectedDeposits: DepositEvent[] = [];
+    let scanCursor = lastProcessedBlock;
 
-    if (allDeposits.length === 0) {
-      return null;  // No deposits to process
+    while (
+      collectedDeposits.length < maxDeposits &&
+      scanCursor < currentBlock &&
+      (Date.now() - startTime) < timeBudgetMs
+    ) {
+      const chunkEnd = Math.min(scanCursor + blockChunkSize, currentBlock);
+
+      const deposits = await this.processDepositEvents(
+        scanCursor,
+        chunkEnd,
+        lastProcessedOpIndex
+      );
+
+      collectedDeposits.push(...deposits);
+
+      // If we've collected enough, break early
+      if (collectedDeposits.length >= maxDeposits) {
+        break;
+      }
+
+      // Move to next chunk
+      scanCursor = chunkEnd + 1;
     }
 
-    // Take first maxOpsPerBatch deposits
-    const depositsToProcess = allDeposits.slice(0, maxOpsPerBatch);
+    // If no deposits found in any chunks, advance to where we scanned up to
+    if (collectedDeposits.length === 0) {
+      return { deposits: [], nextBlock: scanCursor };
+    }
+
+    // Take first maxDeposits deposits (in case we collected more than needed)
+    const depositsToProcess = collectedDeposits.slice(0, maxDeposits);
 
     // Determine nextBlock intelligently
     let nextBlock: number;
-    const lastProcessedBlock = depositsToProcess[depositsToProcess.length - 1].blockNumber;
+    const lastProcessedDepositBlock = depositsToProcess[depositsToProcess.length - 1].blockNumber;
 
-    if (depositsToProcess.length < allDeposits.length) {
-      // We're processing a partial batch
-      // Check if there are more deposits in the same block as the last one we processed
-      const remainingDepositsInSameBlock = allDeposits
-        .slice(maxOpsPerBatch)
-        .some(d => d.blockNumber === lastProcessedBlock);
+    if (depositsToProcess.length < collectedDeposits.length) {
+      // We're processing a partial batch - check if there are more deposits in the same block
+      const remainingDepositsInSameBlock = collectedDeposits
+        .slice(maxDeposits)
+        .some(d => d.blockNumber === lastProcessedDepositBlock);
 
       if (remainingDepositsInSameBlock) {
         // Stay on the same block - we haven't finished processing it
-        nextBlock = lastProcessedBlock;
+        nextBlock = lastProcessedDepositBlock;
       } else {
-        // Move to next block - we finished all deposits in lastProcessedBlock
-        nextBlock = lastProcessedBlock + 1;
+        // Move to next block - we finished all deposits in lastProcessedDepositBlock
+        nextBlock = lastProcessedDepositBlock + 1;
       }
     } else {
-      // We processed all available deposits - advance to next block
-      nextBlock = lastProcessedBlock + 1;
+      // We processed all collected deposits
+      nextBlock = lastProcessedDepositBlock + 1;
     }
 
-    return this.createUpdateBatch(depositsToProcess, [], [], nextBlock);
+    return { deposits: depositsToProcess, nextBlock };
+  }
+
+  /**
+   * MAKES CONTRACT CALLS
+   * Execute a single manager step: collect deposits, apply transactions/payouts, create update batch
+   * This is the main orchestration function for the manager's cron job
+   *
+   * @param transactions - Internal transfers between users
+   * @param payouts - Withdrawals to Ethereum addresses
+   * @param maxDeposits - Maximum number of deposits to process (default: 10)
+   * @param blockChunkSize - Number of blocks to scan per iteration (default: 1000)
+   * @param timeBudgetMs - Time budget for deposit scanning in ms (default: 5000ms)
+   * @returns UpdateBatch ready for doUpdate call and transcript computation
+   */
+  async step(
+    transactions: InternalTransaction[] = [],
+    payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }> = [],
+    maxDeposits: number = 10,
+    blockChunkSize: number = 1000,
+    timeBudgetMs: number = 5000
+  ): Promise<UpdateBatch> {
+    // Collect pending deposits within time budget
+    const { deposits, nextBlock } = await this.collectPendingDeposits(
+      maxDeposits,
+      blockChunkSize,
+      timeBudgetMs
+    );
+
+    // Create update batch combining deposits, transactions, and payouts
+    return this.createUpdateBatch(deposits, transactions, payouts, nextBlock);
   }
 
   /**

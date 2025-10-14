@@ -19,7 +19,8 @@
   ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && vite build --mode sandboxed && tsc --emitDeclarationOnly --declaration --outDir dist"
+    "build": "vite build && vite build --mode sandboxed && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "typecheck": "pnpm build"
   },
   "devDependencies": {
     "@ethersproject/sha2": "5.7.0",

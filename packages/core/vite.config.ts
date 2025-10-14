@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => {
         // Standard build: keep @ethersproject external for tree-shaking
         // Sandboxed build: keep everything external (uses globals)
         external: [
+          '@ethersproject/sha2',
           '@ethersproject/abi',
           '@ethersproject/bytes',
           '@ethersproject/keccak256',

@@ -60,6 +60,12 @@
         "internalType": "uint32",
         "name": "amount",
         "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
       }
     ],
     "name": "OpDeposit",

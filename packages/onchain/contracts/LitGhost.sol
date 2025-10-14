@@ -89,7 +89,7 @@ contract LitGhost {
 
     uint8 immutable m_decimals;
 
-    event OpDeposit(uint64 indexed idx, bytes32 randKey, bytes32 toUser, uint32 amount);
+    event OpDeposit(uint64 indexed idx, bytes32 randKey, bytes32 toUser, uint32 amount, address from);
 
     event LeafChange(uint32 indexed idx, bytes32 leaf);
 
@@ -215,7 +215,7 @@ contract LitGhost {
         dust = amount % divisor;
     }
 
-    function _finishDeposit(DepositTo calldata to, uint256 in_amount)
+    function _finishDeposit(DepositTo calldata to, uint256 in_amount, address from)
         internal
     {
         (uint32 leafAmount, uint256 leafDust) = _convertToTwoDecimals(in_amount, m_decimals);
@@ -225,7 +225,7 @@ contract LitGhost {
             m_dust += leafDust;
         }
 
-        emit OpDeposit(m_counters.opCount, to.rand, to.user, leafAmount);
+        emit OpDeposit(m_counters.opCount, to.rand, to.user, leafAmount, from);
 
         m_counters.opCount += 1;
     }
@@ -262,7 +262,7 @@ contract LitGhost {
 
         require( (bb + in_amount) == ba, "500!" );
 
-        _finishDeposit(to, in_amount);
+        _finishDeposit(to, in_amount, in_from);
     }
 
     function depositERC3009(DepositTo calldata to, Auth3009 calldata auth)
@@ -290,7 +290,7 @@ contract LitGhost {
 
         require( (bb + auth.value) == ba, "500!" );
 
-        _finishDeposit(to, depositAmount);
+        _finishDeposit(to, depositAmount, auth.from);
 
         if( callerIncentive > 0 )
         {
