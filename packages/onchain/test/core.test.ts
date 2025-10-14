@@ -478,8 +478,9 @@ describe("Manager and User Integration (ethers v5)", function () {
     it("Should generate same chaff leaves for same opStart/opCount (deterministic)", async function () {
       const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
 
-      // Create 12 users (2 full leaves)
-      const usernames = Array.from({ length: 12 }, (_, i) => `user${i}`);
+      // Create 50 users to have enough leaves for chaff selection
+      // This will create ~9 leaves, giving us room to test chaff selection
+      const usernames = Array.from({ length: 50 }, (_, i) => `user${i}`);
       for (const username of usernames) {
         const { depositTo } = await createDepositTo(username, teePublicKey);
         const depositToSol = {
@@ -523,11 +524,11 @@ describe("Manager and User Integration (ethers v5)", function () {
       // The leaf indices should be deterministic (based on opStart/opCount)
       const leafIndicesA = batchA.updates.map(l => l.idx).sort((a, b) => a - b);
 
-      // With 12 users (2 full leaves) and transfer affecting leaf 0:
+      // With 50 users (~9 leaves total) and transfer affecting leaf 0:
       // - 1 real leaf update (leaf 0, containing user0 and user1)
-      // - Up to 3 chaff leaves, but only 1 other leaf exists (leaf 1)
-      // Total: 2 leaves (limited by total leaf count)
-      expect(leafIndicesA.length).to.equal(2); // 1 real + 1 chaff
+      // - 3 chaff leaves (chaffMultiplier = 3)
+      // Total: 4 leaves (1 real + 3 chaff)
+      expect(leafIndicesA.length).to.equal(4); // 1 real + 3 chaff
       expect(leafIndicesA[0]).to.equal(0); // Leaf 0 contains user0 and user1
     });
   });
