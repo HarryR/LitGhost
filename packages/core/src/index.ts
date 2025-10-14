@@ -11,6 +11,7 @@ export {
   encryptLeaf,
   decryptLeafBalance,
   getUserLeafInfo,
+  isValidTelegramUsername,
   NAMESPACE_BALANCE,
   NAMESPACE_DEPOSIT
 } from './crypto';

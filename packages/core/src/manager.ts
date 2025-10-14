@@ -5,6 +5,7 @@ import {
   decryptLeafBalance,
   encryptBalance,
   decryptBalance,
+  isValidTelegramUsername,
   type Leaf,
   type DepositTo,
 } from './crypto';
@@ -34,6 +35,16 @@ export interface InternalTransaction {
   from: string;
   to: string;
   amount: number;
+}
+
+/**
+ * Represents an operation that was skipped during processing
+ * Used to track deposits/transfers that couldn't be processed due to validation errors
+ */
+export interface SkippedOperation {
+  type: 'deposit' | 'transfer';
+  reason: string;
+  details: any; // DepositEvent or InternalTransaction or partial event data
 }
 
 const NAMESPACE_CHAFF = "LitGhost.chaff";
@@ -274,20 +285,27 @@ export class ManagerContext {
    * Process OpDeposit events from the blockchain in a given block range
    * Decrypts telegram usernames and extracts deposit information
    *
+   * Handles validation errors gracefully - invalid/corrupted deposits are tracked separately
+   * for refunding, ensuring the step() function never fails.
+   *
    * @param fromBlock - Starting block number (inclusive)
    * @param toBlock - Ending block number (inclusive) or 'latest'
    * @param lastProcessedOpIndex - Skip deposits with opIndex <= this value
-   * @returns Array of deposit events (filtered and decrypted)
+   * @returns Object with valid deposits and invalid deposits (for refunding)
    */
   async processDepositEvents(
     fromBlock: number,
     toBlock: number | string,
     lastProcessedOpIndex: bigint
-  ): Promise<DepositEvent[]> {
+  ): Promise<{
+    validDeposits: DepositEvent[];
+    invalidDeposits: Array<{ event: any; reason: string }>;
+  }> {
     const filter = this.contract.filters.OpDeposit();
     const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
 
-    const deposits: DepositEvent[] = [];
+    const validDeposits: DepositEvent[] = [];
+    const invalidDeposits: Array<{ event: any; reason: string }> = [];
 
     for (const event of events) {
       // Skip removed events (chain reorgs)
@@ -302,28 +320,61 @@ export class ManagerContext {
         continue;
       }
 
-      // Reconstruct DepositTo
-      const depositTo: DepositTo = {
-        rand: arrayify(args.randKey),
-        user: arrayify(args.toUser)
-      };
-
-      // Decrypt telegram username
-      const telegramUsername = decryptDepositTo(depositTo, this.teePrivateKey);
-
       // Extract depositor address for potential refunds
       const depositorAddress = args.from;
+      const amount = Number(args.amount);
+      const opIndex = args.idx;
+      const blockNumber = event.blockNumber;
 
-      deposits.push({
-        opIndex: args.idx,
-        telegramUsername,
-        amount: Number(args.amount),
-        blockNumber: event.blockNumber,
-        depositorAddress
-      });
+      try {
+        // Reconstruct DepositTo
+        const depositTo: DepositTo = {
+          rand: arrayify(args.randKey),
+          user: arrayify(args.toUser)
+        };
+
+        // Decrypt telegram username (may throw if corrupted)
+        const telegramUsername = decryptDepositTo(depositTo, this.teePrivateKey);
+
+        // Validate username format
+        if (!isValidTelegramUsername(telegramUsername)) {
+          invalidDeposits.push({
+            event: {
+              opIndex,
+              amount,
+              depositorAddress,
+              blockNumber,
+              decryptedUsername: telegramUsername
+            },
+            reason: `Invalid telegram username format: "${telegramUsername}"`
+          });
+          continue;
+        }
+
+        // Valid deposit
+        validDeposits.push({
+          opIndex,
+          telegramUsername,
+          amount,
+          blockNumber,
+          depositorAddress
+        });
+
+      } catch (error) {
+        // Decryption failed or other error - mark for refund
+        invalidDeposits.push({
+          event: {
+            opIndex,
+            amount,
+            depositorAddress,
+            blockNumber
+          },
+          reason: `Failed to decrypt deposit: ${error instanceof Error ? error.message : String(error)}`
+        });
+      }
     }
 
-    return deposits;
+    return { validDeposits, invalidDeposits };
   }
 
   /**
@@ -349,7 +400,11 @@ export class ManagerContext {
    * - Deposits: Cap at MAX_BALANCE, generate refund payout for excess back to depositor
    * - Internal transfers: Cap transfer amount to what recipient can receive (no refund needed)
    *
-   * @returns Object with balance deltas and auto-generated refund payouts
+   * Validation strategy:
+   * - Internal transfers to invalid usernames: Skip silently, track in skippedOperations
+   * - This ensures step() never fails due to validation errors
+   *
+   * @returns Object with balance deltas, auto-generated refund payouts, and skipped operations
    */
   private computeBalanceDeltasWithOverflowHandling(
     deposits: DepositEvent[],
@@ -358,9 +413,11 @@ export class ManagerContext {
   ): {
     balanceDeltas: Map<string, number>;
     autoRefundPayouts: Array<{ toAddress: string; amount: bigint }>;
+    skippedOperations: SkippedOperation[];
   } {
     const balanceDeltas = new Map<string, number>();
     const autoRefundPayouts: Array<{ toAddress: string; amount: bigint }> = [];
+    const skippedOperations: SkippedOperation[] = [];
 
     // Process deposits with overflow detection
     for (const deposit of deposits) {
@@ -397,8 +454,28 @@ export class ManagerContext {
       }
     }
 
-    // Process internal transactions with automatic capping
+    // Process internal transactions with validation and automatic capping
     for (const tx of transactions) {
+      // Validate recipient username
+      if (!isValidTelegramUsername(tx.to)) {
+        skippedOperations.push({
+          type: 'transfer',
+          reason: `Invalid recipient username: "${tx.to}"`,
+          details: tx
+        });
+        continue; // Skip this transfer, sender keeps funds
+      }
+
+      // Also validate sender (defensive check)
+      if (!isValidTelegramUsername(tx.from)) {
+        skippedOperations.push({
+          type: 'transfer',
+          reason: `Invalid sender username: "${tx.from}"`,
+          details: tx
+        });
+        continue;
+      }
+
       const senderBalance =
         (currentBalances.get(tx.from) || 0) + (balanceDeltas.get(tx.from) || 0);
       const recipientBalance =
@@ -417,7 +494,7 @@ export class ManagerContext {
       }
     }
 
-    return { balanceDeltas, autoRefundPayouts };
+    return { balanceDeltas, autoRefundPayouts, skippedOperations };
   }
 
   /**
@@ -678,23 +755,30 @@ export class ManagerContext {
    * Create an UpdateBatch for calling doUpdate
    * Processes deposits, internal transactions, and payouts
    *
+   * Handles all error cases gracefully to ensure step() never fails
+   *
    * @param deposits - Deposits to process (from processDepositEvents)
    * @param transactions - Internal transfers between users
    * @param payouts - Withdrawals to Ethereum addresses
    * @param nextBlockToProcess - The block height to resume from next time (manager's explicit decision)
-   * @returns UpdateBatch ready for doUpdate call
+   * @param invalidDeposits - Invalid/corrupted deposits to refund
+   * @returns UpdateBatch and skipped operations metadata
    */
   async createUpdateBatch(
     deposits: DepositEvent[],
     transactions: InternalTransaction[],
     payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>,
-    nextBlockToProcess: number
-  ): Promise<UpdateBatch> {
+    nextBlockToProcess: number,
+    invalidDeposits: Array<{ event: any; reason: string }> = []
+  ): Promise<{
+    batch: UpdateBatch;
+    skippedOperations: SkippedOperation[];
+  }> {
     // Step 1: Get preliminary affected users (to fetch current balances)
     const preliminaryAffectedUsers = new Set([
       ...deposits.map(d => d.telegramUsername),
       ...transactions.flatMap(t => [t.from, t.to]),
-      ...payouts.map(p => p.telegramUsername)
+      ...payouts.map(p => p.telegramUsername).filter(u => u !== '') // Filter out refund payouts
     ]);
 
     // Step 2: Batch fetch user info to get current balances
@@ -704,23 +788,31 @@ export class ManagerContext {
     const updateContext = await this.contract.getUpdateContext(userPublicKeys);
 
     // Step 3: Build preliminary user state map
-    const { currentBalances, userIndices, newUsers, originalUserCount, currentUserCount } =
+    const { currentBalances, userIndices, newUsers, originalUserCount } =
       this.buildUserStateMap(preliminaryAffectedUsers, updateContext.userInfos, updateContext.counters);
 
-    // Step 4: Calculate balance deltas WITH overflow handling (generates auto-refund payouts)
-    const { balanceDeltas, autoRefundPayouts } = this.computeBalanceDeltasWithOverflowHandling(
+    // Step 4: Calculate balance deltas WITH overflow and validation handling
+    const { balanceDeltas, autoRefundPayouts, skippedOperations } = this.computeBalanceDeltasWithOverflowHandling(
       deposits,
       transactions,
       currentBalances
     );
 
-    // Step 5: Merge auto-refund payouts with user-requested payouts
+    // Step 5: Generate refund payouts for invalid deposits
+    const invalidDepositRefunds = invalidDeposits.map(invalid => ({
+      telegramUsername: '', // Not used for refunds - empty username
+      toAddress: invalid.event.depositorAddress,
+      amount: BigInt(invalid.event.amount) * 10000n // Convert 2 decimals back to 6
+    }));
+
+    // Step 6: Merge ALL payout types: overflow refunds + invalid deposit refunds + user payouts
     const allPayouts = [
       ...autoRefundPayouts.map(r => ({
         telegramUsername: '', // Not used for refunds - empty username
         toAddress: r.toAddress,
         amount: r.amount
       })),
+      ...invalidDepositRefunds,
       ...payouts
     ];
 
@@ -731,51 +823,90 @@ export class ManagerContext {
     const { updatedBalances: finalBalances, payoutStructs } =
       this.processPayouts(updatedBalances, allPayouts);
 
-    // Step 7: Extract operation counters for deterministic chaff selection
+    // Step 8: Filter final balances to only include users actually affected by valid operations
+    // This is critical: if all operations were skipped, we shouldn't update any leaves
+    // Only include users who:
+    // - Received deposits
+    // - Were involved in valid (non-skipped) transfers (have balance deltas)
+    // - Have payouts deducted from their balance
+    const actuallyAffectedUsers = new Set([
+      ...deposits.map(d => d.telegramUsername),
+      ...balanceDeltas.keys(),  // Users with actual balance changes from valid transfers
+      ...payouts.map(p => p.telegramUsername).filter(u => u !== '') // Users with payouts (not refunds)
+    ]);
+
+    const filteredFinalBalances = new Map<string, number>();
+    const filteredUserIndices = new Map<string, number>();
+    const filteredNewUsers = new Set<Uint8Array>();
+
+    for (const username of actuallyAffectedUsers) {
+      if (finalBalances.has(username)) {
+        filteredFinalBalances.set(username, finalBalances.get(username)!);
+        filteredUserIndices.set(username, userIndices.get(username)!);
+
+        // Check if this is a new user (newUsers contains usernames as strings)
+        if (newUsers.has(username)) {
+          const userPubKey = this.getUserPublicKey(username);
+          filteredNewUsers.add(userPubKey);
+        }
+      }
+    }
+
+    // Recalculate current user count based on filtered users
+    const filteredCurrentUserCount = originalUserCount + filteredNewUsers.size;
+
+    // Step 9: Extract operation counters for deterministic chaff selection
     const opStart = updateContext.counters.processedOps;
     const opCount = BigInt(deposits.length);
 
-    // Step 8: Select all leaves (real + chaff) and shuffle for privacy
+    // Step 10: Select all leaves (real + chaff) and shuffle for privacy
     const shuffledLeafIndices = this.selectAndShuffleLeaves(
-      finalBalances,
-      userIndices,
-      currentUserCount,
+      filteredFinalBalances,
+      filteredUserIndices,
+      filteredCurrentUserCount,
       opStart,
       opCount
     );
 
-    // Step 9: Batch fetch all leaves and build complete public key map
+    // Step 11: Batch fetch all leaves and build complete public key map
     const { leaves, userIndexToPublicKey } = await this.fetchLeavesAndPublicKeys(
       shuffledLeafIndices,
-      userIndices,
+      filteredUserIndices,
       originalUserCount
     );
 
-    // Step 10: Decrypt leaves, apply balance updates, and re-encrypt
+    // Step 12: Decrypt leaves, apply balance updates, and re-encrypt
     const leafUpdates = this.decryptAndUpdateLeaves(
       shuffledLeafIndices,
       leaves,
       userIndexToPublicKey,
-      finalBalances,
-      userIndices,
+      filteredFinalBalances,
+      filteredUserIndices,
       originalUserCount,
-      currentUserCount
+      filteredCurrentUserCount
     );
 
-    // Step 11: Prepare new user public keys
-    const newUserPublicKeys = Array.from(newUsers).map(username =>
-      this.getUserPublicKey(username)
-    );
-
-    // Step 12: Build and return UpdateBatch
-    return {
+    // Step 13: Build UpdateBatch
+    const batch: UpdateBatch = {
       opStart,
       opCount,
       nextBlock: BigInt(nextBlockToProcess),
       updates: shuffledLeafIndices.map(idx => leafUpdates.get(idx)!),
-      newUsers: newUserPublicKeys,
+      newUsers: Array.from(filteredNewUsers), // Already Uint8Array public keys
       payouts: payoutStructs
     };
+
+    // Step 13: Combine all skipped operations (invalid deposits + invalid transfers)
+    const allSkippedOperations: SkippedOperation[] = [
+      ...skippedOperations,
+      ...invalidDeposits.map(inv => ({
+        type: 'deposit' as const,
+        reason: inv.reason,
+        details: inv.event
+      }))
+    ];
+
+    return { batch, skippedOperations: allSkippedOperations };
   }
 
   /**
@@ -786,18 +917,23 @@ export class ManagerContext {
    * Strategy:
    * - Iteratively scans blocks in chunks until time budget exhausted, current block reached, or maxDeposits collected
    * - Returns deposits and recommended nextBlock cursor position
+   * - Handles invalid/corrupted deposits gracefully by tracking them for refunding
    * - This prevents having to scan weeks of blocks after periods of inactivity
    *
    * @param maxDeposits - Maximum number of deposits to collect (default: 10)
    * @param blockChunkSize - Number of blocks to fetch per iteration (default: 1000)
    * @param timeBudgetMs - Maximum time to spend scanning for deposits in milliseconds (default: 5000ms = 5s)
-   * @returns Object with deposits array and nextBlock cursor position
+   * @returns Object with valid deposits, invalid deposits (for refunding), and nextBlock cursor position
    */
   async collectPendingDeposits(
     maxDeposits: number = 10,
     blockChunkSize: number = 1000,
     timeBudgetMs: number = 5000
-  ): Promise<{ deposits: DepositEvent[], nextBlock: number }> {
+  ): Promise<{
+    deposits: DepositEvent[];
+    invalidDeposits: Array<{ event: any; reason: string }>;
+    nextBlock: number;
+  }> {
     const startTime = Date.now();
 
     // Get current state from contract
@@ -808,11 +944,12 @@ export class ManagerContext {
 
     // If we're already caught up, return empty deposits and advance cursor to current block
     if (lastProcessedBlock >= currentBlock) {
-      return { deposits: [], nextBlock: currentBlock };
+      return { deposits: [], invalidDeposits: [], nextBlock: currentBlock };
     }
 
     // Iteratively fetch deposits in chunks until we hit one of our limits
     const collectedDeposits: DepositEvent[] = [];
+    const allInvalidDeposits: Array<{ event: any; reason: string }> = [];
     let scanCursor = lastProcessedBlock;
 
     while (
@@ -822,13 +959,14 @@ export class ManagerContext {
     ) {
       const chunkEnd = Math.min(scanCursor + blockChunkSize, currentBlock);
 
-      const deposits = await this.processDepositEvents(
+      const { validDeposits, invalidDeposits } = await this.processDepositEvents(
         scanCursor,
         chunkEnd,
         lastProcessedOpIndex
       );
 
-      collectedDeposits.push(...deposits);
+      collectedDeposits.push(...validDeposits);
+      allInvalidDeposits.push(...invalidDeposits);
 
       // If we've collected enough, break early
       if (collectedDeposits.length >= maxDeposits) {
@@ -841,7 +979,7 @@ export class ManagerContext {
 
     // If no deposits found in any chunks, advance to where we scanned up to
     if (collectedDeposits.length === 0) {
-      return { deposits: [], nextBlock: scanCursor };
+      return { deposits: [], invalidDeposits: allInvalidDeposits, nextBlock: scanCursor };
     }
 
     // Take first maxDeposits deposits (in case we collected more than needed)
@@ -869,7 +1007,7 @@ export class ManagerContext {
       nextBlock = lastProcessedDepositBlock + 1;
     }
 
-    return { deposits: depositsToProcess, nextBlock };
+    return { deposits: depositsToProcess, invalidDeposits: allInvalidDeposits, nextBlock };
   }
 
   /**
@@ -877,12 +1015,17 @@ export class ManagerContext {
    * Execute a single manager step: collect deposits, apply transactions/payouts, create update batch
    * This is the main orchestration function for the manager's cron job
    *
+   * IMPORTANT: This function NEVER fails - all errors are handled gracefully:
+   * - Invalid/corrupted deposits → Automatically refunded
+   * - Invalid transfer recipients → Skipped, tracked in skippedOperations
+   * - Balance overflows → Automatically refunded or capped
+   *
    * @param transactions - Internal transfers between users
    * @param payouts - Withdrawals to Ethereum addresses
    * @param maxDeposits - Maximum number of deposits to process (default: 10)
    * @param blockChunkSize - Number of blocks to scan per iteration (default: 1000)
    * @param timeBudgetMs - Time budget for deposit scanning in ms (default: 5000ms)
-   * @returns UpdateBatch ready for doUpdate call and transcript computation
+   * @returns UpdateBatch ready for doUpdate call and metadata about skipped operations
    */
   async step(
     transactions: InternalTransaction[] = [],
@@ -890,16 +1033,20 @@ export class ManagerContext {
     maxDeposits: number = 10,
     blockChunkSize: number = 1000,
     timeBudgetMs: number = 5000
-  ): Promise<UpdateBatch> {
+  ): Promise<{
+    batch: UpdateBatch;
+    skippedOperations: SkippedOperation[];
+  }> {
     // Collect pending deposits within time budget
-    const { deposits, nextBlock } = await this.collectPendingDeposits(
+    const { deposits, invalidDeposits, nextBlock } = await this.collectPendingDeposits(
       maxDeposits,
       blockChunkSize,
       timeBudgetMs
     );
 
     // Create update batch combining deposits, transactions, and payouts
-    return this.createUpdateBatch(deposits, transactions, payouts, nextBlock);
+    // Handles invalid deposits and validation errors gracefully
+    return this.createUpdateBatch(deposits, transactions, payouts, nextBlock, invalidDeposits);
   }
 
   /**

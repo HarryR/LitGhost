@@ -108,7 +108,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       await lg.connect(user1).depositERC20(depositToSol, depositAmount);
 
       // Manager processes deposit events
-      const deposits = await manager.processDepositEvents(0, 'latest', -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(0, 'latest', -1n);
 
       expect(deposits).to.have.length(1);
       expect(deposits[0].telegramUsername).to.equal("alice");
@@ -156,7 +156,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes deposits
-      const deposits = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
       expect(deposits).to.have.length(3);
 
       // Determine nextBlock (last deposit block + 1)
@@ -164,7 +164,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       const nextBlock = lastDepositBlock + 1;
 
       // Manager creates update batch
-      const batch = await manager.createUpdateBatch(deposits, [], [], nextBlock);
+      const { batch } = await manager.createUpdateBatch(deposits, [], [], nextBlock);
 
       expect(batch.opCount).to.equal(3n);
       expect(batch.newUsers).to.have.length(3);
@@ -225,9 +225,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes initial deposits
-      const deposits = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
       const lastDepositBlock1 = Math.max(...deposits.map(d => d.blockNumber));
-      const batch1 = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       const updatesSol1 = batch1.updates.map(leaf => ({
@@ -253,7 +253,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // Internal transfer - no new deposits, stay at current block
       const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
-      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
+      const { batch: batch2 } = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
       const transcript2 = await manager.computeTranscriptForBatch(batch2);
 
       const updatesSol2 = batch2.updates.map(leaf => ({
@@ -298,9 +298,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes deposit
-      const deposits = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
       const lastDepositBlock1 = Math.max(...deposits.map(d => d.blockNumber));
-      const batch1 = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       await v5lg.connect(v5Owner).doUpdate(
@@ -325,7 +325,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       const balanceBefore = await token.balanceOf(user2.address);
       const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
-      const batch2 = await manager.createUpdateBatch([], [], payouts, currentBlock2 + 1);
+      const { batch: batch2 } = await manager.createUpdateBatch([], [], payouts, currentBlock2 + 1);
       const transcript2 = await manager.computeTranscriptForBatch(batch2);
 
       await v5lg.doUpdate(
@@ -374,14 +374,14 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Get all deposits
-      const deposits = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
       expect(deposits).to.have.length(3);
 
       // Process all deposits but specify an arbitrary nextBlock
       const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
       const nextBlock = lastDepositBlock + 5; // Arbitrary future block
 
-      const batch = await manager.createUpdateBatch(deposits, [], [], nextBlock);
+      const { batch } = await manager.createUpdateBatch(deposits, [], [], nextBlock);
       const transcript = await manager.computeTranscriptForBatch(batch);
 
       await v5lg.doUpdate(
@@ -432,9 +432,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Process all deposits first
-      const allDeposits = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { validDeposits: allDeposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
       const lastDepositBlock1 = Math.max(...allDeposits.map(d => d.blockNumber));
-      const batch1 = await manager.createUpdateBatch(allDeposits, [], [], lastDepositBlock1 + 1);
+      const { batch: batch1 } = await manager.createUpdateBatch(allDeposits, [], [], lastDepositBlock1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       await v5lg.doUpdate(
@@ -453,14 +453,14 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // Now do a small internal transfer that only affects one user
       const transactions: InternalTransaction[] = [
-        { from: "user1", to: "user1", amount: 0 } // Self-transfer (no balance change)
+        { from: "user1", to: "user2", amount: 10_00 } // Small transfer between users
       ];
 
       const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
-      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
+      const { batch: batch2 } = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
 
       // With chaffMultiplier = 3 (default) and 8 users (2 leaves total), we expect:
-      // - 1 real leaf update (leaf 0, containing user1)
+      // - 1 real leaf update (leaf 0, containing user1 and user2)
       // - 1 chaff leaf (leaf 1 - the only other leaf available)
       // Total: 2 leaves updated (limited by total leaf count)
       expect(batch2.updates.length).to.equal(2);
@@ -487,8 +487,14 @@ describe("Manager and User Integration (ethers v5)", function () {
         "0x" + Buffer.from(transcript2).toString("hex")
       );
 
-      // Verify all user balances remain correct after chaff update
-      for (const username of usernames) {
+      // Verify all user balances reflect the transfer
+      const user1Balance = await manager.getBalanceFromChain("user1");
+      const user2Balance = await manager.getBalanceFromChain("user2");
+      expect(user1Balance).to.equal(90_00); // Sent 10_00 to user2
+      expect(user2Balance).to.equal(110_00); // Received 10_00 from user1
+
+      // Verify other users unchanged
+      for (const username of usernames.slice(2)) { // Skip user1 and user2
         const balance = await manager.getBalanceFromChain(username);
         expect(balance).to.equal(100_00);
       }
@@ -517,9 +523,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Process all deposits
-      const allDeposits = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { validDeposits: allDeposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
       const lastDepositBlock = Math.max(...allDeposits.map(d => d.blockNumber));
-      const batch1 = await manager.createUpdateBatch(allDeposits, [], [], lastDepositBlock + 1);
+      const { batch: batch1 } = await manager.createUpdateBatch(allDeposits, [], [], lastDepositBlock + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       await v5lg.doUpdate(
@@ -543,7 +549,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // Create first batch
       const currentBlock = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock + 1;
-      const batchA = await manager.createUpdateBatch([], transactions, [], currentBlock + 1);
+      const { batch: batchA } = await manager.createUpdateBatch([], transactions, [], currentBlock + 1);
 
       // The leaf indices should be deterministic (based on opStart/opCount)
       const leafIndicesA = batchA.updates.map(l => l.idx).sort((a, b) => a - b);
@@ -576,9 +582,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes and updates
-      const deposits = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
       const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
-      const batch = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
+      const { batch } = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
       const transcript = await manager.computeTranscriptForBatch(batch);
 
       await v5lg.doUpdate(
@@ -628,9 +634,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes initial deposit
-      const deposits = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
       const lastDepositBlock1 = Math.max(...deposits.map(d => d.blockNumber));
-      const batch1 = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       // Record block number before first update
@@ -666,7 +672,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       ];
 
       const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
-      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
+      const { batch: batch2 } = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
       const transcript2 = await manager.computeTranscriptForBatch(batch2);
 
       await v5lg.doUpdate(
@@ -730,9 +736,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes deposit
-      const deposits = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
       const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
-      const batch = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
+      const { batch } = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
       const transcript = await manager.computeTranscriptForBatch(batch);
 
       await v5lg.doUpdate(
@@ -805,9 +811,9 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Manager processes deposit
-      const deposits = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
       const lastDepositBlock = Math.max(...deposits.map(d => d.blockNumber));
-      const batch = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
+      const { batch } = await manager.createUpdateBatch(deposits, [], [], lastDepositBlock + 1);
       const transcript = await manager.computeTranscriptForBatch(batch);
 
       await v5lg.doUpdate(
@@ -879,8 +885,8 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit1 = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Process first deposit
-      const deposits1 = await manager.processDepositEvents(blockBeforeDeposit1, blockAfterDeposit1, -1n);
-      const batch1 = await manager.createUpdateBatch(deposits1, [], [], blockAfterDeposit1 + 1);
+      const { validDeposits: deposits1 } = await manager.processDepositEvents(blockBeforeDeposit1, blockAfterDeposit1, -1n);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits1, [], [], blockAfterDeposit1 + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       await v5lg.doUpdate(
@@ -916,8 +922,8 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockAfterDeposit2 = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       // Process second deposit (should generate refund)
-      const deposits2 = await manager.processDepositEvents(blockBeforeDeposit2, blockAfterDeposit2, batch1.opStart + batch1.opCount);
-      const batch2 = await manager.createUpdateBatch(deposits2, [], [], blockAfterDeposit2 + 1);
+      const { validDeposits: deposits2 } = await manager.processDepositEvents(blockBeforeDeposit2, blockAfterDeposit2, batch1.opStart + batch1.opCount);
+      const { batch: batch2 } = await manager.createUpdateBatch(deposits2, [], [], blockAfterDeposit2 + 1);
 
       // Batch should have payouts (refunds)
       expect(batch2.payouts.length).to.be.greaterThan(0);
@@ -969,8 +975,8 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const deposits = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
-      const batch1 = await manager.createUpdateBatch(deposits, [], [], blockAfterDeposits + 1);
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits, [], [], blockAfterDeposits + 1);
       const transcript1 = await manager.computeTranscriptForBatch(batch1);
 
       await v5lg.doUpdate(
@@ -999,7 +1005,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       ];
 
       const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? blockAfterDeposits + 1;
-      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
+      const { batch: batch2 } = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
       const transcript2 = await manager.computeTranscriptForBatch(batch2);
 
       await v5lg.doUpdate(
@@ -1023,6 +1029,160 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Since Bob started at 100 and could receive 50, transfer should complete
       expect(aliceBalance).to.equal(50_00);
       expect(bobBalance).to.equal(150_00);
+    });
+  });
+
+  describe("Invalid Username Handling", function () {
+    it("Should skip internal transfer to invalid username", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Setup: Alice deposits
+      const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
+
+      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const depositToSol = {
+        rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+        user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+      };
+
+      await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+      await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+
+      const blockAfterDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
+
+      // Process deposit
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposit, blockAfterDeposit, -1n);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits, [], [], blockAfterDeposit + 1);
+      const transcript1 = await manager.computeTranscriptForBatch(batch1);
+
+      await v5lg.doUpdate(
+        batch1.opStart,
+        batch1.opCount,
+        batch1.nextBlock,
+        batch1.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch1.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript1).toString("hex")
+      );
+
+      // Verify Alice has balance
+      const aliceBalanceBefore = await manager.getBalanceFromChain("alice");
+      expect(aliceBalanceBefore).to.equal(100_00);
+
+      // Try to transfer to invalid usernames
+      const transactions: InternalTransaction[] = [
+        { from: "alice", to: "123invalid", amount: 10_00 },  // Starts with number
+        { from: "alice", to: "_underscore", amount: 10_00 }, // Starts with underscore
+        { from: "alice", to: "a__double", amount: 10_00 },   // Double underscore
+        { from: "alice", to: "trailing_", amount: 10_00 },   // Ends with underscore
+      ];
+
+      const currentBlock = await lg.runner?.provider?.getBlockNumber() ?? blockAfterDeposit + 1;
+      const { batch: batch2, skippedOperations } = await manager.createUpdateBatch([], transactions, [], currentBlock + 1);
+
+      // Verify all transfers were skipped
+      expect(skippedOperations.length).to.equal(4);
+      expect(skippedOperations.every(op => op.type === 'transfer')).to.be.true;
+
+      const transcript2 = await manager.computeTranscriptForBatch(batch2);
+
+      await v5lg.doUpdate(
+        batch2.opStart,
+        batch2.opCount,
+        batch2.nextBlock,
+        batch2.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        [],
+        [],
+        "0x" + Buffer.from(transcript2).toString("hex")
+      );
+
+      // Verify Alice still has all her balance (no transfers went through)
+      const aliceBalanceAfter = await manager.getBalanceFromChain("alice");
+      expect(aliceBalanceAfter).to.equal(100_00);
+    });
+
+    it("Should handle valid and invalid transfers in same batch", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Setup: Alice and Bob both deposit
+      const blockBeforeDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
+
+      for (const username of ["alice", "bob"]) {
+        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const depositToSol = {
+          rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+          user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+        };
+
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+      }
+
+      const blockAfterDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
+
+      const { validDeposits: deposits } = await manager.processDepositEvents(blockBeforeDeposits, blockAfterDeposits, -1n);
+      const { batch: batch1 } = await manager.createUpdateBatch(deposits, [], [], blockAfterDeposits + 1);
+      const transcript1 = await manager.computeTranscriptForBatch(batch1);
+
+      await v5lg.doUpdate(
+        batch1.opStart,
+        batch1.opCount,
+        batch1.nextBlock,
+        batch1.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch1.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript1).toString("hex")
+      );
+
+      // Mix of valid and invalid transfers
+      const transactions: InternalTransaction[] = [
+        { from: "alice", to: "bob", amount: 20_00 },        // VALID
+        { from: "alice", to: "invalid_", amount: 10_00 },   // INVALID - ends with underscore
+        { from: "alice", to: "bob", amount: 10_00 },        // VALID
+      ];
+
+      const currentBlock = await lg.runner?.provider?.getBlockNumber() ?? blockAfterDeposits + 1;
+      const { batch: batch2, skippedOperations } = await manager.createUpdateBatch([], transactions, [], currentBlock + 1);
+
+      // Verify one transfer was skipped
+      expect(skippedOperations.length).to.equal(1);
+      expect(skippedOperations[0].type).to.equal('transfer');
+      expect(skippedOperations[0].reason).to.include('invalid_');
+
+      const transcript2 = await manager.computeTranscriptForBatch(batch2);
+
+      await v5lg.doUpdate(
+        batch2.opStart,
+        batch2.opCount,
+        batch2.nextBlock,
+        batch2.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        [],
+        [],
+        "0x" + Buffer.from(transcript2).toString("hex")
+      );
+
+      // Verify only valid transfers went through (20 + 10 = 30)
+      const aliceBalance = await manager.getBalanceFromChain("alice");
+      const bobBalance = await manager.getBalanceFromChain("bob");
+
+      expect(aliceBalance).to.equal(70_00); // 100 - 30
+      expect(bobBalance).to.equal(130_00);  // 100 + 30
     });
   });
 });

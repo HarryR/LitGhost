@@ -24,10 +24,10 @@ export interface Leaf {
  * - Can contain letters, digits, and underscores
  * - Cannot end with underscore
  * - Cannot have consecutive underscores
- * 
+ *
  * See: https://github.com/tdlib/td/blob/369ee922b45bfa7e8da357e4d62e93925862d86d/td/telegram/misc.cpp#L260
  */
-function isValidTelegramUsername(username: string): boolean {
+export function isValidTelegramUsername(username: string): boolean {
   if (username.length === 0 || username.length > 32) {
     return false;
   }
