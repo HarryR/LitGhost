@@ -6,6 +6,7 @@
  */
 
 export { keccak256 } from '@ethersproject/keccak256';
+export { computeHmac, SupportedAlgorithm } from '@ethersproject/sha2';
 export { arrayify, concat, hexlify } from '@ethersproject/bytes';
 export { defaultAbiCoder } from '@ethersproject/abi';
 export { SigningKey } from '@ethersproject/signing-key';

@@ -1,15 +1,17 @@
-import { keccak256, arrayify, concat, Contract } from './ethers-compat.js';
+import { arrayify, Contract } from './ethers-compat.js';
 import {
   decryptDepositTo,
   getUserLeafInfo,
   decryptLeafBalance,
   encryptBalance,
+  decryptBalance,
   type Leaf,
   type DepositTo,
 } from './crypto';
 import {
   deriveUserKeypair,
   computeSharedSecret,
+  namespacedHmac,
 } from './utils';
 import { computeTranscript, type UpdateBatch, type Payout } from './transcript';
 
@@ -40,18 +42,132 @@ export class ManagerContext {
   constructor(
     private teePrivateKey: Uint8Array,
     private userMasterKey: Uint8Array,
-    private contract: Contract
+    private contract: Contract,
+    private chaffSecret: string = 'LitGhost.chaff.default',
+    private chaffMultiplier: number = 3
   ) {}
 
   /**
-   * Compute the on-chain encrypted user ID from telegram username
-   * This is what's stored in m_userIndices mapping
+   * Deterministically select chaff leaf indices for privacy
+   * Uses consecutive hashing to generate random-looking but reproducible leaf indices
+   *
+   * @param totalLeafCount - Total number of leaves in the system
+   * @param realLeafIndices - Set of leaf indices that have real updates (to exclude)
+   * @param opStart - Starting operation index for this batch
+   * @param opCount - Number of operations in this batch
+   * @returns Set of chaff leaf indices to re-encrypt
    */
-  computeEncryptedUserId(telegramUsername: string): Uint8Array {
-    return arrayify(keccak256(concat([
-      this.teePrivateKey,
-      Buffer.from(telegramUsername, 'utf8')
-    ])));
+  private selectChaffLeaves(
+    totalLeafCount: number,
+    realLeafIndices: Set<number>,
+    opStart: bigint,
+    opCount: bigint
+  ): Set<number> {
+    const chaffLeaves = new Set<number>();
+
+    // If there are no leaves or no real updates, no chaff needed
+    if (totalLeafCount === 0 || realLeafIndices.size === 0) {
+      return chaffLeaves;
+    }
+
+    // Calculate target number of chaff leaves
+    const targetChaffCount = realLeafIndices.size * this.chaffMultiplier;
+
+    // Base data for hashing: chaffSecret + opStart + opCount
+    const baseData = Buffer.concat([
+      Buffer.from(this.chaffSecret, 'utf8'),
+      Buffer.from(opStart.toString()),
+      Buffer.from(opCount.toString())
+    ]);
+
+    let counter = 0;
+    const maxAttempts = targetChaffCount * 10; // Prevent infinite loops
+
+    while (chaffLeaves.size < targetChaffCount && counter < maxAttempts) {
+      // Hash: HMAC(teePrivateKey, namespace, baseData || counter)
+      const data = Buffer.concat([baseData, Buffer.from(counter.toString())]);
+      const hash = namespacedHmac(this.teePrivateKey, 'LitGhost.chaff.selection', data);
+
+      // Convert first 4 bytes to a number and take modulo totalLeafCount
+      const hashValue = new DataView(hash.buffer, hash.byteOffset, 4).getUint32(0, false);
+      const leafIndex = hashValue % totalLeafCount;
+
+      // Only add if it's not a real leaf and not already selected
+      // With public keys on-chain, we can now re-encrypt any leaf
+      if (!realLeafIndices.has(leafIndex) && !chaffLeaves.has(leafIndex)) {
+        chaffLeaves.add(leafIndex);
+      }
+
+      counter++;
+    }
+
+    return chaffLeaves;
+  }
+
+  /**
+   * Apply balance deltas and validate constraints
+   * Returns updated balance map
+   */
+  private applyBalanceDeltas(
+    currentBalances: Map<string, number>,
+    balanceDeltas: Map<string, number>
+  ): Map<string, number> {
+    const updatedBalances = new Map(currentBalances);
+
+    for (const [username, delta] of balanceDeltas) {
+      const newBalance = (updatedBalances.get(username) || 0) + delta;
+      if (newBalance < 0) {
+        throw new Error(
+          `Balance would go negative for ${username}: current=${updatedBalances.get(username) || 0}, delta=${delta}`
+        );
+      }
+      updatedBalances.set(username, newBalance);
+    }
+
+    return updatedBalances;
+  }
+
+  /**
+   * Process payouts and generate payout structs
+   * Deducts amounts from balances and returns Payout array
+   */
+  private processPayouts(
+    currentBalances: Map<string, number>,
+    payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>
+  ): { updatedBalances: Map<string, number>; payoutStructs: Payout[] } {
+    const updatedBalances = new Map(currentBalances);
+    const payoutStructs: Payout[] = [];
+
+    for (const payout of payouts) {
+      const balance = updatedBalances.get(payout.telegramUsername) || 0;
+
+      // Payout amount comes in full token decimals, need to convert to 2 decimals for balance tracking
+      // For a 6-decimal token (like USDC), divide by 10^4 to get 2 decimals
+      const amountBigInt = BigInt(payout.amount);
+      const amountIn2Decimals = Number(amountBigInt / 10000n);
+
+      if (balance < amountIn2Decimals) {
+        throw new Error(
+          `Insufficient balance for ${payout.telegramUsername}: has ${balance}, needs ${amountIn2Decimals} (payout ${payout.amount})`
+        );
+      }
+
+      updatedBalances.set(payout.telegramUsername, balance - amountIn2Decimals);
+      payoutStructs.push({
+        toWho: payout.toAddress,
+        amount: amountBigInt
+      });
+    }
+
+    return { updatedBalances, payoutStructs };
+  }
+
+  /**
+   * Get the user's public key from their telegram username
+   * This is now what's stored in m_userIndices and m_indexToUser mappings
+   */
+  getUserPublicKey(telegramUsername: string): Uint8Array {
+    return this.deriveUserKeypair(telegramUsername).publicKey;
   }
 
   /**
@@ -66,9 +182,9 @@ export class ManagerContext {
    * Returns 0 if user doesn't exist yet
    */
   async getUserIndex(telegramUsername: string): Promise<number> {
-    const encryptedUserId = this.computeEncryptedUserId(telegramUsername);
-    const encryptedUserIdHex = '0x' + Buffer.from(encryptedUserId).toString('hex');
-    const userIndices = await this.contract.getUserLeaves([encryptedUserIdHex]);
+    const userPublicKey = this.getUserPublicKey(telegramUsername);
+    const userPublicKeyHex = '0x' + Buffer.from(userPublicKey).toString('hex');
+    const userIndices = await this.contract.getUserLeaves([userPublicKeyHex]);
     // Handle both BigNumber and plain number returns
     const firstIndex = userIndices[0];
     return Number(firstIndex);
@@ -79,11 +195,11 @@ export class ManagerContext {
    * Returns 0 if user doesn't exist or has no balance
    */
   async getBalanceFromChain(telegramUsername: string): Promise<number> {
-    const encryptedUserId = this.computeEncryptedUserId(telegramUsername);
-    const encryptedUserIdHex = '0x' + Buffer.from(encryptedUserId).toString('hex');
+    const userPublicKey = this.getUserPublicKey(telegramUsername);
+    const userPublicKeyHex = '0x' + Buffer.from(userPublicKey).toString('hex');
 
     // Single call to get user info and leaf
-    const userInfo = await this.contract.getUserInfo(encryptedUserIdHex);
+    const userInfo = await this.contract.getUserInfo(userPublicKeyHex);
     const userIndex = Number(userInfo.userIndex);
 
     if (userIndex === 0) {
@@ -98,14 +214,13 @@ export class ManagerContext {
       nonce: Number(userInfo.leaf.nonce)
     };
 
-    // Derive user's public key
-    const { publicKey: userPublicKey } = this.deriveUserKeypair(telegramUsername);
 
     // Compute shared secret for balance decryption
     const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
 
     // Decrypt balance
-    return decryptLeafBalance(leaf, position, sharedSecret);
+    const balance = decryptLeafBalance(leaf, position, sharedSecret);
+    return balance;
   }
 
   /**
@@ -157,22 +272,12 @@ export class ManagerContext {
   }
 
   /**
-   * Create an UpdateBatch for calling doUpdate
-   * Processes deposits, internal transactions, and payouts
-   *
-   * @param deposits - Deposits to process (from processDepositEvents)
-   * @param transactions - Internal transfers between users
-   * @param payouts - Withdrawals to Ethereum addresses
-   * @param nextBlockToProcess - The block height to resume from next time (manager's explicit decision)
-   * @returns UpdateBatch ready for doUpdate call
+   * Helper: Compute balance deltas from deposits and internal transactions
    */
-  async createUpdateBatch(
+  private computeBalanceDeltas(
     deposits: DepositEvent[],
-    transactions: InternalTransaction[],
-    payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>,
-    nextBlockToProcess: number
-  ): Promise<UpdateBatch> {
-    // Calculate balance deltas
+    transactions: InternalTransaction[]
+  ): Map<string, number> {
     const balanceDeltas = new Map<string, number>();
 
     // Process deposits
@@ -189,27 +294,30 @@ export class ManagerContext {
       balanceDeltas.set(tx.to, (balanceDeltas.get(tx.to) || 0) + tx.amount);
     }
 
-    // Get all affected users
-    const affectedUsers = new Set([
-      ...balanceDeltas.keys(),
-      ...payouts.map(p => p.telegramUsername)
-    ]);
+    return balanceDeltas;
+  }
 
-    // Batch fetch all user info and status in a single call
-    const encryptedUserIds = Array.from(affectedUsers).map(username =>
-      '0x' + Buffer.from(this.computeEncryptedUserId(username)).toString('hex')
-    );
+  /**
+   * Helper: Build user state map from update context
+   * Returns user indices, current balances, and identifies new users
+   */
+  private buildUserStateMap(
+    affectedUsers: Set<string>,
+    userInfos: any[],
+    counters: any
+  ): {
+    currentBalances: Map<string, number>;
+    userIndices: Map<string, number>;
+    newUsers: Set<string>;
+    originalUserCount: number;
+    currentUserCount: number;
+  } {
 
-    const updateContext = await this.contract.getUpdateContext(encryptedUserIds);
-    const counters = updateContext.counters;
-    const userInfos = updateContext.userInfos;
-
-    // Build maps for current balances and user indices
     const currentBalances = new Map<string, number>();
     const userIndices = new Map<string, number>();
     const newUsers = new Set<string>();
-
-    let currentUserCount = Number(counters.userCount);
+    const originalUserCount = Number(counters.userCount);
+    let currentUserCount = originalUserCount;
 
     const affectedUsersArray = Array.from(affectedUsers);
     for (let i = 0; i < affectedUsersArray.length; i++) {
@@ -242,108 +350,297 @@ export class ManagerContext {
       }
     }
 
-    // Apply deltas
-    for (const [username, delta] of balanceDeltas) {
-      const newBalance = (currentBalances.get(username) || 0) + delta;
-      if (newBalance < 0) {
-        throw new Error(`Balance would go negative for ${username}: current=${currentBalances.get(username) || 0}, delta=${delta}`);
-      }      
-      currentBalances.set(username, newBalance);
-    }
+    return { currentBalances, userIndices, newUsers, originalUserCount, currentUserCount };
+  }
 
-    // Process payouts (deduct from balances)
-    const payoutStructs: Payout[] = [];
-    for (const payout of payouts) {
-      const balance = currentBalances.get(payout.telegramUsername) || 0;
+  /**
+   * Helper: Select all leaves (real + chaff) and shuffle for privacy
+   */
+  private selectAndShuffleLeaves(
+    currentBalances: Map<string, number>,
+    userIndices: Map<string, number>,
+    currentUserCount: number,
+    opStart: bigint,
+    opCount: bigint
+  ): number[] {
 
-      // Payout amount comes in full token decimals, need to convert to 2 decimals for balance tracking
-      // For a 6-decimal token (like USDC), divide by 10^4 to get 2 decimals
-      const amountBigInt = BigInt(payout.amount);
-      const amountIn2Decimals = Number(amountBigInt / 10000n);
-
-      if (balance < amountIn2Decimals) {
-        throw new Error(`Insufficient balance for ${payout.telegramUsername}: has ${balance}, needs ${amountIn2Decimals} (payout ${payout.amount})`);
-      }
-      currentBalances.set(payout.telegramUsername, balance - amountIn2Decimals);
-      payoutStructs.push({
-        toWho: payout.toAddress,
-        amount: amountBigInt
-      });
-    }
-
-    // Build encrypted leaf updates
-    const leafUpdates = new Map<number, Leaf>();
-    const oldLeaves = new Map<number, Leaf>();
-
-    // Collect unique leaf indices we need to load
-    const leafIndicesToLoad = new Set<number>();
+    // Find all leaves that need updating (real)
+    const realLeafIndices = new Set<number>();
     for (const username of currentBalances.keys()) {
       const userIndex = userIndices.get(username)!;
       const { leafIdx } = getUserLeafInfo(userIndex);
-      leafIndicesToLoad.add(leafIdx);
+      realLeafIndices.add(leafIdx);
     }
 
-    // Batch load all required leaves
-    if (leafIndicesToLoad.size > 0) {
-      const leafIdxArray = Array.from(leafIndicesToLoad);
-      const leaves = await this.contract.getLeaves(leafIdxArray);
+    // Calculate total number of leaves in the system
+    const totalLeafCount = Math.ceil(currentUserCount / 6);
 
-      for (let i = 0; i < leafIdxArray.length; i++) {
-        const leafIdx = leafIdxArray[i];
-        const oldLeaf: Leaf = {
-          encryptedBalances: leaves[i].encryptedBalances.map((b: string) => arrayify(b)),
-          idx: Number(leaves[i].idx),
-          nonce: Number(leaves[i].nonce)
-        };
-        oldLeaves.set(leafIdx, oldLeaf);
+    // Select chaff leaves for privacy (deterministic based on opStart/opCount)
+    const chaffLeafIndices = this.selectChaffLeaves(
+      totalLeafCount,
+      realLeafIndices,
+      opStart,
+      opCount
+    );
 
-        // Clone for updating and increment nonce
-        leafUpdates.set(leafIdx, {
-          ...oldLeaf,
-          encryptedBalances: [...oldLeaf.encryptedBalances],
-          nonce: oldLeaf.nonce + 1 // Increment nonce for each update
-        });
+
+    // Combine all leaf indices (real + chaff)
+    const allLeafIndices = new Set([...realLeafIndices, ...chaffLeafIndices]);
+
+    // Randomize leaf order for additional privacy (deterministic shuffle based on opStart)
+    const shuffled = Array.from(allLeafIndices).sort((a, b) => {
+      const hashA = namespacedHmac(this.teePrivateKey, 'LitGhost.leaf.order',
+        Buffer.concat([Buffer.from(opStart.toString()), Buffer.from(a.toString())]));
+      const hashB = namespacedHmac(this.teePrivateKey, 'LitGhost.leaf.order',
+        Buffer.concat([Buffer.from(opStart.toString()), Buffer.from(b.toString())]));
+      return Buffer.compare(hashA, hashB);
+    });
+
+    return shuffled;
+  }
+
+  /**
+   * Helper: Fetch leaves and build complete user public key map
+   */
+  private async fetchLeavesAndPublicKeys(
+    shuffledLeafIndices: number[],
+    userIndices: Map<string, number>,
+    originalUserCount: number
+  ): Promise<{
+    leaves: Leaf[];
+    userIndexToPublicKey: Map<number, Uint8Array>;
+  }> {
+    if (shuffledLeafIndices.length === 0) {
+      return { leaves: [], userIndexToPublicKey: new Map() };
+    }
+
+    // Batch load all leaves
+    const leavesRaw = await this.contract.getLeaves(shuffledLeafIndices);
+    const leaves: Leaf[] = leavesRaw.map((leaf: any) => ({
+      encryptedBalances: leaf.encryptedBalances.map((b: string) => arrayify(b)),
+      idx: Number(leaf.idx),
+      nonce: Number(leaf.nonce)
+    }));
+
+    // Build map of userIndex → publicKey
+    // First, add public keys for users we already know (from affected users in this batch)
+    const userIndexToPublicKey = new Map<number, Uint8Array>();
+    for (const [username, userIdx] of userIndices) {
+      const { publicKey } = this.deriveUserKeypair(username);
+      userIndexToPublicKey.set(userIdx, publicKey);
+    }
+
+    // Collect user indices we don't know about (need to fetch from contract)
+    // But only for existing users - new users won't have public keys on-chain yet
+    const unknownUserIndices: number[] = [];
+    for (const leafIdx of shuffledLeafIndices) {
+      for (let position = 0; position < 6; position++) {
+        const userIndex = leafIdx * 6 + position;
+        // Only fetch if: user is EXISTING (< originalUserCount) and not already in our map
+        if (userIndex < originalUserCount && !userIndexToPublicKey.has(userIndex)) {
+          unknownUserIndices.push(userIndex);
+        }
       }
     }
 
-    for (const [username, newBalance] of currentBalances) {
-      const userIndex = userIndices.get(username)!;
-      const { leafIdx, position } = getUserLeafInfo(userIndex);
-
-      const leaf = leafUpdates.get(leafIdx)!;
-
-      // Derive user's public key
-      const { publicKey: userPublicKey } = this.deriveUserKeypair(username);
-
-      // Compute shared secret
-      const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
-
-      // Encrypt balance using centralized crypto function
-      const encryptedBalance = encryptBalance(newBalance, sharedSecret, leaf.nonce);
-
-      leaf.encryptedBalances[position] = encryptedBalance;
+    // Batch fetch public keys for unknown existing users
+    if (unknownUserIndices.length > 0) {
+      const publicKeys = await this.contract.getUserPublicKeys(unknownUserIndices);
+      for (let i = 0; i < unknownUserIndices.length; i++) {
+        const pk = arrayify(publicKeys[i]);
+        const userIdx = unknownUserIndices[i];
+        // Verify we got a valid public key (not zeros)
+        if (pk.some(byte => byte !== 0)) {
+          // DEBUG: Check if this matches what we would derive locally
+          // We don't know the username for this userIdx, so we can't verify here
+          userIndexToPublicKey.set(userIdx, pk);
+        } else {
+        }
+      }
     }
 
-    // Prepare new user IDs
-    const newUserIds = Array.from(newUsers).map(username =>
-      this.computeEncryptedUserId(username)
-    );
 
-    // Use opStart from the batch call we already made
-    const opStart = counters.processedOps;
+    return { leaves, userIndexToPublicKey };
+  }
+
+  /**
+   * Helper: Decrypt leaves, apply balance updates, and re-encrypt
+   */
+  private decryptAndUpdateLeaves(
+    shuffledLeafIndices: number[],
+    leaves: Leaf[],
+    userIndexToPublicKey: Map<number, Uint8Array>,
+    currentBalances: Map<string, number>,
+    userIndices: Map<string, number>,
+    originalUserCount: number,
+    currentUserCount: number
+  ): Map<number, Leaf> {
+
+    const leafUpdates = new Map<number, Leaf>();
+
+    for (let i = 0; i < shuffledLeafIndices.length; i++) {
+      const leafIdx = shuffledLeafIndices[i];
+      const oldLeaf = leaves[i];
+
+      // Decrypt all balances in this leaf
+      const decryptedBalances: number[] = [];
+      for (let position = 0; position < 6; position++) {
+        const userIndex = leafIdx * 6 + position;
+        // Only decrypt EXISTING users (those that were on-chain before this batch)
+        // New users (>= originalUserCount) don't have encrypted balances yet
+        if (userIndex < originalUserCount) {
+          const userPublicKey = userIndexToPublicKey.get(userIndex);
+          if (userPublicKey) {
+            const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+            const balance = decryptBalance(
+              oldLeaf.encryptedBalances[position],
+              sharedSecret,
+              oldLeaf.nonce
+            );
+            decryptedBalances[position] = balance;
+          } else {
+            // No public key available - this shouldn't happen in practice
+            decryptedBalances[position] = 0;
+          }
+        } else if (userIndex < currentUserCount) {
+          // New user in this batch - start with balance 0 (will be updated below)
+          decryptedBalances[position] = 0;
+        } else {
+          // Empty slot (beyond current user count)
+          decryptedBalances[position] = 0;
+        }
+      }
+
+      // Apply balance updates from deltas (only for real updates)
+      for (const [username, newBalance] of currentBalances) {
+        const userIndex = userIndices.get(username)!;
+        const { leafIdx: targetLeafIdx, position } = getUserLeafInfo(userIndex);
+        if (targetLeafIdx === leafIdx) {
+          decryptedBalances[position] = newBalance;
+        }
+      }
+
+      // Re-encrypt all balances with new nonce
+      const newNonce = oldLeaf.nonce + 1;
+      const newEncryptedBalances: Uint8Array[] = [];
+      for (let position = 0; position < 6; position++) {
+        const userIndex = leafIdx * 6 + position;
+        if (userIndex < currentUserCount) {
+          const userPublicKey = userIndexToPublicKey.get(userIndex);
+          if (userPublicKey) {
+            const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+            const encryptedBalance = encryptBalance(
+              decryptedBalances[position],
+              sharedSecret,
+              newNonce
+            );
+            newEncryptedBalances[position] = encryptedBalance;
+          } else {
+            // No public key - leave as zeros (shouldn't happen if decrypt worked)
+            newEncryptedBalances[position] = new Uint8Array(4);
+          }
+        } else {
+          newEncryptedBalances[position] = new Uint8Array(4); // Empty slot
+        }
+      }
+
+      leafUpdates.set(leafIdx, {
+        encryptedBalances: newEncryptedBalances,
+        idx: leafIdx,
+        nonce: newNonce
+      });
+    }
+
+    return leafUpdates;
+  }
+
+  /**
+   * Create an UpdateBatch for calling doUpdate
+   * Processes deposits, internal transactions, and payouts
+   *
+   * @param deposits - Deposits to process (from processDepositEvents)
+   * @param transactions - Internal transfers between users
+   * @param payouts - Withdrawals to Ethereum addresses
+   * @param nextBlockToProcess - The block height to resume from next time (manager's explicit decision)
+   * @returns UpdateBatch ready for doUpdate call
+   */
+  async createUpdateBatch(
+    deposits: DepositEvent[],
+    transactions: InternalTransaction[],
+    payouts: Array<{ telegramUsername: string; toAddress: string; amount: bigint }>,
+    nextBlockToProcess: number
+  ): Promise<UpdateBatch> {
+    // Step 1: Calculate balance deltas from deposits and transactions
+    const balanceDeltas = this.computeBalanceDeltas(deposits, transactions);
+
+    // Step 2: Get all affected users (from deltas and payouts)
+    const affectedUsers = new Set([
+      ...balanceDeltas.keys(),
+      ...payouts.map(p => p.telegramUsername)
+    ]);
+
+    // Step 3: Batch fetch all user info and status in a single RPC call
+    const userPublicKeys = Array.from(affectedUsers).map(username =>
+      '0x' + Buffer.from(this.getUserPublicKey(username)).toString('hex')
+    );
+    const updateContext = await this.contract.getUpdateContext(userPublicKeys);
+
+    // Step 4: Build user state map (indices, balances, identify new users)
+    const { currentBalances, userIndices, newUsers, originalUserCount, currentUserCount } =
+      this.buildUserStateMap(affectedUsers, updateContext.userInfos, updateContext.counters);
+
+    // Step 5: Apply balance deltas and validate constraints
+    const updatedBalances = this.applyBalanceDeltas(currentBalances, balanceDeltas);
+
+    // Step 6: Process payouts (convert decimals, validate, deduct from balances)
+    const { updatedBalances: finalBalances, payoutStructs } =
+      this.processPayouts(updatedBalances, payouts);
+
+    // Step 7: Extract operation counters for deterministic chaff selection
+    const opStart = updateContext.counters.processedOps;
     const opCount = BigInt(deposits.length);
 
-    // Build UpdateBatch
-    const batch: UpdateBatch = {
+    // Step 8: Select all leaves (real + chaff) and shuffle for privacy
+    const shuffledLeafIndices = this.selectAndShuffleLeaves(
+      finalBalances,
+      userIndices,
+      currentUserCount,
+      opStart,
+      opCount
+    );
+
+    // Step 9: Batch fetch all leaves and build complete public key map
+    const { leaves, userIndexToPublicKey } = await this.fetchLeavesAndPublicKeys(
+      shuffledLeafIndices,
+      userIndices,
+      originalUserCount
+    );
+
+    // Step 10: Decrypt leaves, apply balance updates, and re-encrypt
+    const leafUpdates = this.decryptAndUpdateLeaves(
+      shuffledLeafIndices,
+      leaves,
+      userIndexToPublicKey,
+      finalBalances,
+      userIndices,
+      originalUserCount,
+      currentUserCount
+    );
+
+    // Step 11: Prepare new user public keys
+    const newUserPublicKeys = Array.from(newUsers).map(username =>
+      this.getUserPublicKey(username)
+    );
+
+    // Step 12: Build and return UpdateBatch
+    return {
       opStart,
       opCount,
       nextBlock: BigInt(nextBlockToProcess),
-      updates: Array.from(leafUpdates.values()),
-      newUsers: newUserIds,
+      updates: shuffledLeafIndices.map(idx => leafUpdates.get(idx)!),
+      newUsers: newUserPublicKeys,
       payouts: payoutStructs
     };
-
-    return batch;
   }
 
   /**

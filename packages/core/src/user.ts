@@ -42,7 +42,7 @@ export class UserClient {
 
   constructor(
     private userPrivateKey: Uint8Array,
-    private encryptedUserId: Uint8Array,
+    private userPublicKey: Uint8Array,  // User's public key (stored on-chain in m_userIndices and m_indexToUser)
     private teePublicKey: Uint8Array,
     private contract: Contract
   ) {}
@@ -56,8 +56,8 @@ export class UserClient {
       return this.userIndex;
     }
 
-    const encryptedUserIdHex = '0x' + Buffer.from(this.encryptedUserId).toString('hex');
-    const userIndices = await this.contract.getUserLeaves([encryptedUserIdHex]);
+    const userPublicKeyHex = '0x' + Buffer.from(this.userPublicKey).toString('hex');
+    const userIndices = await this.contract.getUserLeaves([userPublicKeyHex]);
     // Handle both BigNumber and plain number returns
     const firstIndex = userIndices[0];
     this.userIndex = Number(firstIndex);

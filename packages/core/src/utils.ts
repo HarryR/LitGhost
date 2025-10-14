@@ -1,4 +1,7 @@
-import { defaultAbiCoder, arrayify, concat, keccak256, SigningKey, randomBytes, hexlify } from './ethers-compat.js';
+import {
+  defaultAbiCoder, arrayify, concat, SigningKey,
+  randomBytes, hexlify, computeHmac, SupportedAlgorithm
+} from './ethers-compat.js';
 
 /**
  * Generate a random secp256k1 keypair with even y-coordinate
@@ -22,6 +25,14 @@ export function randomKeypair() {
   }
 }
 
+const SECP256K1_N = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
+
+export function isSecp256k1Scalar(hexValue: string): boolean {  
+  const valueBigInt = BigInt(hexValue);
+  // Must be in range [1, n)
+  return valueBigInt > 0n && valueBigInt < SECP256K1_N;
+}
+
 /**
  * Derive a deterministic secp256k1 keypair with even y-coordinate
  * Used by the manager to derive user long-term keys from a master key
@@ -38,25 +49,24 @@ export function deriveUserKeypair(
   const seedBytes = Buffer.from(seed, 'utf8');
 
   while (true) {
-    // Derive candidate private key: keccak256(masterKey || seed || counter)
     const material = concat([
-      masterKey,
       seedBytes,
       encodeUint32(counter)
     ]);
-    const candidateSK = arrayify(keccak256(material));
-
-    const signingKey = new SigningKey(candidateSK);
-    const compressed = signingKey.compressedPublicKey;
-
-    if (compressed.startsWith('0x02')) {
-      // Even y-coordinate - return x-coordinate only (32 bytes)
-      return {
-        privateKey: candidateSK,
-        publicKey: arrayify('0x' + compressed.slice(4))
-      };
+    const candidateSK_hex = computeHmac(SupportedAlgorithm.sha256, masterKey, material)
+    if( isSecp256k1Scalar(candidateSK_hex) )
+    {
+      const candidateSK_bytes = arrayify(candidateSK_hex);
+      const signingKey = new SigningKey(candidateSK_bytes);
+      const compressed = signingKey.compressedPublicKey;
+      if (compressed.startsWith('0x02')) {
+        // Even y-coordinate - return x-coordinate only (32 bytes)
+        return {
+          privateKey: candidateSK_bytes,
+          publicKey: arrayify('0x' + compressed.slice(4))
+        };
+      }
     }
-
     // Odd y-coordinate, increment counter and try again
     counter++;
   }
@@ -135,5 +145,10 @@ export function createNamespacedKey(
   namespace: string
 ): Uint8Array {
   const namespaceBytes = Buffer.from(namespace, 'utf8');
-  return arrayify(keccak256(concat([namespaceBytes, sharedSecret])));
+  return arrayify(computeHmac(SupportedAlgorithm.sha256, sharedSecret, namespaceBytes));
+}
+
+export function namespacedHmac(secret:Uint8Array, namespace: string, data:Uint8Array): Uint8Array {
+ const k = createNamespacedKey(secret, `(${namespace}) HMAC SHA256`);
+ return arrayify(computeHmac(SupportedAlgorithm.sha256, k, data)) 
 }

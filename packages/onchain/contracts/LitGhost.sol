@@ -75,6 +75,7 @@ contract LitGhost {
     mapping(uint32 => Leaf) internal m_leaves;
 
     mapping(bytes32 => uint32) internal m_userIndices;
+    mapping(uint32 => bytes32) m_indexToUser;
 
     OpCounters internal m_counters;
 
@@ -135,6 +136,19 @@ contract LitGhost {
         }
     }
 
+    function getUserPublicKeys(uint32[] calldata userIndices)
+        public view returns (bytes32[] memory publicKeys)
+    {
+        uint n = userIndices.length;
+
+        publicKeys = new bytes32[](n);
+
+        for( uint i = 0; i < n; i++ )
+        {
+            publicKeys[i] = m_indexToUser[userIndices[i]];
+        }
+    }
+
     function decimals ()
         public pure returns (uint8)
     {
@@ -155,7 +169,7 @@ contract LitGhost {
         info.userIndex = m_userIndices[encryptedUserId];
 
         if (info.userIndex > 0) {
-            uint32 leafIdx = (info.userIndex - 1) / 6;
+            uint32 leafIdx = (info.userIndex) / 6;
             info.leaf = m_leaves[leafIdx];
         }
     }
@@ -338,6 +352,7 @@ contract LitGhost {
             uint32 nui = uc+i;
             transcript = keccak256(abi.encode(transcript, nui, in_newUsers[i]));
             m_userIndices[in_newUsers[i]] = nui;
+            m_indexToUser[nui] = in_newUsers[i];
         }
         counters.userCount += nul;
 

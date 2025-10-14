@@ -1,8 +1,7 @@
-import { keccak256, arrayify, concat } from './ethers-compat.js';
-import { encodeUint32, decodeUint32, xorBytes, randomKeypair, createNamespacedKey, computeSharedSecret } from './utils';
+import { encodeUint32, decodeUint32, xorBytes, randomKeypair, createNamespacedKey, computeSharedSecret, namespacedHmac } from './utils';
 
-export const NAMESPACE_DEPOSIT = 'dorp.deposit';
-export const NAMESPACE_BALANCE = 'dorp.balance';
+export const NAMESPACE_DEPOSIT = 'LitGhost.deposit';
+export const NAMESPACE_BALANCE = 'LitGhost.balance';
 
 /**
  * Types
@@ -19,20 +18,60 @@ export interface Leaf {
 }
 
 /**
+ * Validates a Telegram username according to TDLib rules:
+ * - 1-32 characters
+ * - Must start with a letter
+ * - Can contain letters, digits, and underscores
+ * - Cannot end with underscore
+ * - Cannot have consecutive underscores
+ * 
+ * See: https://github.com/tdlib/td/blob/369ee922b45bfa7e8da357e4d62e93925862d86d/td/telegram/misc.cpp#L260
+ */
+function isValidTelegramUsername(username: string): boolean {
+  if (username.length === 0 || username.length > 32) {
+    return false;
+  }
+  // Must start with a letter
+  if (!/^[a-zA-Z]/.test(username[0])) {
+    return false;
+  }
+  // Cannot end with underscore
+  if (username[username.length - 1] === '_') {
+    return false;
+  }
+  // Check all characters are alphanumeric or underscore
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    return false;
+  }
+  // Check no consecutive underscores
+  if (username.includes('__')) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Blind a telegram username using XOR with hashed ECDH secret
  * Encrypts the plaintext username (zero-padded to 32 bytes) so the TEE can decrypt it
- * and know who received the deposit
+ * and know who received the deposit.
+ *
+ * The shared secret is derived from ECDH between an ephemeral key (used once per deposit)
+ * and a long-term TEE public key, ensuring each blinded ID is unique.
  */
 export function blindUserId(
   telegramId: string,
   sharedSecret: Uint8Array
 ): Uint8Array {
-  // Zero-pad telegram username to 32 bytes
-  const usernameBytes = new Uint8Array(32);
-  const encoded = Buffer.from(telegramId, 'utf8');
-  if (encoded.length > 32) {
-    throw new Error('Telegram ID too long (max 32 bytes UTF-8)');
+  // Validate telegram username format per TDLib rules
+  if (!isValidTelegramUsername(telegramId)) {
+    throw new Error('Invalid Telegram username format');
   }
+
+  // Encode telegram ID to ASCII bytes (usernames are ASCII-only)
+  const encoded = Buffer.from(telegramId, 'ascii');
+
+  // Zero-pad to 32 bytes (right-padded with zeros)
+  const usernameBytes = new Uint8Array(32);
   usernameBytes.set(encoded, 0);
 
   const blindingKey = createNamespacedKey(sharedSecret, NAMESPACE_DEPOSIT);
@@ -41,8 +80,10 @@ export function blindUserId(
 
 /**
  * Unblind a user ID (TEE side)
- * Reverses the blinding operation to recover the plaintext telegram username
- * Note: XOR is symmetric, so unblinding uses the same operation as blinding
+ * Reverses the blinding operation to recover the plaintext telegram username.
+ * Note: XOR is symmetric, so unblinding uses the same operation as blinding.
+ *
+ * Strips trailing zero-byte padding before ASCII decoding.
  */
 export function unblindUserId(
   blindedUserId: Uint8Array,
@@ -51,19 +92,32 @@ export function unblindUserId(
   const blindingKey = createNamespacedKey(sharedSecret, NAMESPACE_DEPOSIT);
   const usernameBytes = xorBytes(blindedUserId, blindingKey);
 
-  // Decode and strip null padding
-  return Buffer.from(usernameBytes).toString('utf8').replace(/\0+$/, '');
+  // Strip trailing null bytes before decoding
+  let length = usernameBytes.length;
+  while (length > 0 && usernameBytes[length - 1] === 0) {
+    length--;
+  }
+
+  // Decode only the non-padded portion as ASCII
+  const username = Buffer.from(usernameBytes.subarray(0, length)).toString('ascii');
+
+  // Verify result is valid Telegram username format (defensive check)
+  if (!isValidTelegramUsername(username)) {
+    throw new Error('Decrypted username has invalid Telegram username format');
+  }
+
+  return username;
 }
 
 /**
  * Create a DepositTo structure for a deposit
  * User generates ephemeral keypair and blinds their telegram ID
  */
-export async function createDepositTo(
+export function createDepositTo(
   telegramId: string,
   teePublicKey: Uint8Array
-): Promise<{ depositTo: DepositTo; ephemeralPrivateKey: Uint8Array }> {
-  const kp = await randomKeypair();
+): { depositTo: DepositTo; ephemeralPrivateKey: Uint8Array } {
+  const kp = randomKeypair();
   const sharedSecret = computeSharedSecret(kp.privateKey, teePublicKey);
   const blindedUserId = blindUserId(telegramId, sharedSecret);
   return {
@@ -98,10 +152,8 @@ export function encryptBalance(
   sharedSecret: Uint8Array,
   nonce: number
 ): Uint8Array {
-  const secretWithNonce = deriveSecretWithNonce(sharedSecret, nonce);
-  const balanceBytes = encodeUint32(balance);
-  const encryptionKey = createNamespacedKey(secretWithNonce, NAMESPACE_BALANCE);
-  return xorBytes(balanceBytes, encryptionKey.slice(0, 4));
+  const encryptionKey = namespacedHmac(sharedSecret, NAMESPACE_BALANCE, encodeUint32(nonce));
+  return xorBytes(encodeUint32(balance), encryptionKey.slice(0, 4));
 }
 
 /**
@@ -116,18 +168,8 @@ export function decryptBalance(
   sharedSecret: Uint8Array,
   nonce: number
 ): number {
-  const secretWithNonce = deriveSecretWithNonce(sharedSecret, nonce);
-  const decryptionKey = createNamespacedKey(secretWithNonce, NAMESPACE_BALANCE);
-  const balanceBytes = xorBytes(encryptedBalance, decryptionKey.slice(0, 4));
-  return decodeUint32(balanceBytes);
-}
-
-/**
- * Derive a secret with nonce for leaf encryption
- */
-function deriveSecretWithNonce(sharedSecret: Uint8Array, nonce: number): Uint8Array {
-  const nonceBytes = encodeUint32(nonce);
-  return arrayify(keccak256(concat([sharedSecret, nonceBytes])));
+  const decryptionKey = namespacedHmac(sharedSecret, NAMESPACE_BALANCE, encodeUint32(nonce));
+  return decodeUint32(xorBytes(encryptedBalance, decryptionKey.slice(0, 4)));
 }
 
 /**
@@ -163,6 +205,10 @@ export function decryptLeafBalance(
 
 /**
  * Helper: Get user's leaf index and position from userIndex
+ * Users are stored in leaves of 6 users each:
+ *   - Leaf 0: users 0-5 (user 0 is sentinel, positions 1-5 are real users 1-5)
+ *   - Leaf 1: users 6-11
+ *   - Leaf N: users (N*6) to (N*6+5)
  */
 export function getUserLeafInfo(userIndex: number): { leafIdx: number; position: number } {
   return {

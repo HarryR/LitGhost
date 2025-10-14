@@ -33,7 +33,8 @@ export {
   computeSharedSecret,
   randomKeypair,
   deriveUserKeypair,
-  reconstructCompressedPublicKey
+  reconstructCompressedPublicKey,
+  namespacedHmac,
 } from './utils';
 
 export {

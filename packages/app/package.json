@@ -13,7 +13,7 @@
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
     "@telegram-apps/sdk-vue": "^2.0.31",
-    "ethers": "^5.8.0",
+    "ethers": "5.7.0",
     "lucide-vue-next": "^0.545.0",
     "reka-ui": "^2.5.1",
     "tailwindcss-animate": "^1.0.7",

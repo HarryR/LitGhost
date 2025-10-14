@@ -35,17 +35,12 @@ export function validateGhostRequest(value: unknown): GhostRequest {
     throw new Error('ghostRequest.type is required and must be a string');
   }
 
-  // Validate based on discriminator
-  switch (req.type) {
-    case 'echo':
-      if (typeof req.message !== 'string') {
-        throw new Error('ghostRequest.message must be a string for echo requests');
-      }
-      return req as GhostRequestEcho;
-
-    default:
-      throw new Error(`Unknown ghostRequest type: ${req.type}`);
+  // Validate based on discriminator using type guards
+  if (isGhostRequestEcho(req)) {
+    return req;
   }
+
+  throw new Error(`Unknown ghostRequest type: ${req.type}`);
 }
 
 /**

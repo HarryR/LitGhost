@@ -14,6 +14,8 @@ if (!globalEthers || !globalEthers.utils) {
 /**
  * Export ethers utilities from global object
  */
+export const computeHmac = globalEthers.utils.computeHmac;
+export const SupportedAlgorithm = globalEthers.utils.SupportedAlgorithm;
 export const keccak256 = globalEthers.utils.keccak256;
 export const arrayify = globalEthers.utils.arrayify;
 export const concat = globalEthers.utils.concat;

@@ -51,6 +51,38 @@ export interface LitActionsNamespace {
    */
   setResponse(response: { response: string }): void;
 
+  /**
+   * Run a function once across the node cohort (only the leader executes)
+   *
+   * @param options - Configuration options
+   * @param options.waitForResponse - Whether to wait for a response or not
+   * @param options.name - Optional broadcast channel ID (defaults to 'default_bc_id')
+   * @param async_fn - The async function to execute
+   * @returns The result from the function (as string) or undefined if not waiting
+   */
+  runOnce(
+    options: { waitForResponse?: boolean; name?: string },
+    async_fn: () => Promise<any>
+  ): Promise<string | undefined>;
+
+  /**
+   * Convert a Uint8Array to a string
+   *
+   * @param array - The Uint8Array to convert
+   * @param encoding - The encoding to use (defaults to "utf8")
+   * @returns The string representation of the Uint8Array
+   */
+  uint8arrayToString(array: Uint8Array, encoding?: string): string;
+
+  /**
+   * Convert a string to a Uint8Array
+   *
+   * @param string - The string to convert
+   * @param encoding - The encoding to use (defaults to "utf8")
+   * @returns The Uint8Array representation of the string
+   */
+  uint8arrayFromString(string: string, encoding?: string): Uint8Array;
+
   // Add more Lit Actions methods as needed (signEcdsa, getJwt, etc.)
 }
 

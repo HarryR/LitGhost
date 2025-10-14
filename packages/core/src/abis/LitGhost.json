@@ -693,6 +693,25 @@
   {
     "inputs": [
       {
+        "internalType": "uint32[]",
+        "name": "userIndices",
+        "type": "uint32[]"
+      }
+    ],
+    "name": "getUserPublicKeys",
+    "outputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "publicKeys",
+        "type": "bytes32[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "in_to",
         "type": "address"

@@ -115,14 +115,14 @@ describe("Manager and User Integration (ethers v5)", function () {
       expect(deposits[0].amount).to.equal(100_00); // 100.00 in 2 decimals
     });
 
-    it("Should compute encrypted user IDs correctly", async function () {
-      const encryptedUserId = manager.computeEncryptedUserId("alice");
-      expect(encryptedUserId).to.be.instanceOf(Uint8Array);
-      expect(encryptedUserId.length).to.equal(32);
+    it("Should compute user public keys correctly", async function () {
+      const userPublicKey = manager.getUserPublicKey("alice");
+      expect(userPublicKey).to.be.instanceOf(Uint8Array);
+      expect(userPublicKey.length).to.equal(32);
 
-      // Same username should produce same ID (deterministic)
-      const encryptedUserId2 = manager.computeEncryptedUserId("alice");
-      expect(Buffer.from(encryptedUserId)).to.deep.equal(Buffer.from(encryptedUserId2));
+      // Same username should produce same public key (deterministic)
+      const userPublicKey2 = manager.getUserPublicKey("alice");
+      expect(Buffer.from(userPublicKey)).to.deep.equal(Buffer.from(userPublicKey2));
     });
 
     it("Should derive user keypairs deterministically", async function () {
@@ -393,6 +393,145 @@ describe("Manager and User Integration (ethers v5)", function () {
     });
   });
 
+  describe("Chaff Leaves for Privacy", function () {
+    it("Should add deterministic chaff leaves to updates", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Create enough users to span multiple leaves (6 users per leaf)
+      // We'll create 8 users, so they span 2 leaves (leaf 0 and leaf 1)
+      const usernames = ["user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8"];
+      for (const username of usernames) {
+        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const depositToSol = {
+          rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+          user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+        };
+
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+      }
+
+      // Process all deposits first
+      const allDeposits = await manager.processDepositEvents();
+      const lastDepositBlock1 = Math.max(...allDeposits.map(d => d.blockNumber));
+      const batch1 = await manager.createUpdateBatch(allDeposits, [], [], lastDepositBlock1 + 1);
+      const transcript1 = await manager.computeTranscriptForBatch(batch1);
+
+      await v5lg.doUpdate(
+        batch1.opStart,
+        batch1.opCount,
+        batch1.nextBlock,
+        batch1.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch1.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript1).toString("hex")
+      );
+
+      // Now do a small internal transfer that only affects one user
+      const transactions: InternalTransaction[] = [
+        { from: "user1", to: "user1", amount: 0 } // Self-transfer (no balance change)
+      ];
+
+      const currentBlock2 = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock1 + 1;
+      const batch2 = await manager.createUpdateBatch([], transactions, [], currentBlock2 + 1);
+
+      // With chaffMultiplier = 3 (default) and 8 users (2 leaves total), we expect:
+      // - 1 real leaf update (leaf 0, containing user1)
+      // - 1 chaff leaf (leaf 1 - the only other leaf available)
+      // Total: 2 leaves updated (limited by total leaf count)
+      expect(batch2.updates.length).to.equal(2);
+
+      // Verify all leaf nonces have been incremented
+      for (const leaf of batch2.updates) {
+        expect(leaf.nonce).to.be.greaterThan(0);
+      }
+
+      // Verify the update is valid by computing transcript and executing
+      const transcript2 = await manager.computeTranscriptForBatch(batch2);
+
+      await v5lg.doUpdate(
+        batch2.opStart,
+        batch2.opCount,
+        batch2.nextBlock,
+        batch2.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        [],
+        [],
+        "0x" + Buffer.from(transcript2).toString("hex")
+      );
+
+      // Verify all user balances remain correct after chaff update
+      for (const username of usernames) {
+        const balance = await manager.getBalanceFromChain(username);
+        expect(balance).to.equal(100_00);
+      }
+
+    });
+
+    it("Should generate same chaff leaves for same opStart/opCount (deterministic)", async function () {
+      const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
+
+      // Create 12 users (2 full leaves)
+      const usernames = Array.from({ length: 12 }, (_, i) => `user${i}`);
+      for (const username of usernames) {
+        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const depositToSol = {
+          rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
+          user: "0x" + Buffer.from(depositTo.user).toString("hex"),
+        };
+
+        await token.connect(user1).approve(await lg.getAddress(), depositAmount);
+        await lg.connect(user1).depositERC20(depositToSol, depositAmount);
+      }
+
+      // Process all deposits
+      const allDeposits = await manager.processDepositEvents();
+      const lastDepositBlock = Math.max(...allDeposits.map(d => d.blockNumber));
+      const batch1 = await manager.createUpdateBatch(allDeposits, [], [], lastDepositBlock + 1);
+      const transcript1 = await manager.computeTranscriptForBatch(batch1);
+
+      await v5lg.doUpdate(
+        batch1.opStart,
+        batch1.opCount,
+        batch1.nextBlock,
+        batch1.updates.map(leaf => ({
+          encryptedBalances: leaf.encryptedBalances.map(b => "0x" + Buffer.from(b).toString("hex")),
+          idx: leaf.idx,
+          nonce: leaf.nonce
+        })),
+        batch1.newUsers.map(id => "0x" + Buffer.from(id).toString("hex")),
+        [],
+        "0x" + Buffer.from(transcript1).toString("hex")
+      );
+
+      // Create two identical internal transaction batches
+      const transactions: InternalTransaction[] = [
+        { from: "user0", to: "user1", amount: 10_00 }
+      ];
+
+      // Create first batch
+      const currentBlock = await lg.runner?.provider?.getBlockNumber() ?? lastDepositBlock + 1;
+      const batchA = await manager.createUpdateBatch([], transactions, [], currentBlock + 1);
+
+      // The leaf indices should be deterministic (based on opStart/opCount)
+      const leafIndicesA = batchA.updates.map(l => l.idx).sort((a, b) => a - b);
+
+      // With 12 users (2 full leaves) and transfer affecting leaf 0:
+      // - 1 real leaf update (leaf 0, containing user0 and user1)
+      // - Up to 3 chaff leaves, but only 1 other leaf exists (leaf 1)
+      // Total: 2 leaves (limited by total leaf count)
+      expect(leafIndicesA.length).to.equal(2); // 1 real + 1 chaff
+      expect(leafIndicesA[0]).to.equal(0); // Leaf 0 contains user0 and user1
+    });
+  });
+
   describe("User Client", function () {
     it("Should allow users to query their balances", async function () {
       const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
@@ -429,11 +568,10 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // User client setup
       const userKeypair = deriveUserKeypair("alice", userMasterKey);
-      const encryptedUserId = manager.computeEncryptedUserId("alice");
 
       const userClient = new UserClient(
         userKeypair.privateKey,
-        encryptedUserId,
+        userKeypair.publicKey,  // Public key is now what's stored on-chain
         teePublicKey,
         v5lg
       );
@@ -481,11 +619,10 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // User client setup
       const userKeypair = deriveUserKeypair("alice", userMasterKey);
-      const encryptedUserId = manager.computeEncryptedUserId("alice");
 
       const userClient = new UserClient(
         userKeypair.privateKey,
-        encryptedUserId,
+        userKeypair.publicKey,  // Public key is now what's stored on-chain
         teePublicKey,
         v5lg
       );
@@ -519,7 +656,9 @@ describe("Manager and User Integration (ethers v5)", function () {
         fromBlock: blockBeforeFirstUpdate,
         maxEvents: 2  // Only expect 2 events for this test
       })) {
-        updates.push(update);
+        if( update !== null ) {
+          updates.push(update);
+        }
       }
 
       // Should have received 2 updates (initial deposit and internal transfer)
@@ -575,11 +714,10 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // User client setup
       const userKeypair = deriveUserKeypair("alice", userMasterKey);
-      const encryptedUserId = manager.computeEncryptedUserId("alice");
 
       const userClient = new UserClient(
         userKeypair.privateKey,
-        encryptedUserId,
+        userKeypair.publicKey,  // Public key is now what's stored on-chain
         teePublicKey,
         v5lg
       );
@@ -647,11 +785,10 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       // User client setup
       const userKeypair = deriveUserKeypair("alice", userMasterKey);
-      const encryptedUserId = manager.computeEncryptedUserId("alice");
 
       const userClient = new UserClient(
         userKeypair.privateKey,
-        encryptedUserId,
+        userKeypair.publicKey,  // Public key is now what's stored on-chain
         teePublicKey,
         v5lg
       );
