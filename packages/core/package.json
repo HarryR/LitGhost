@@ -26,10 +26,12 @@
     "@ethersproject/sha2": "5.7.0",
     "@ethersproject/abi": "5.7.0",
     "@ethersproject/bytes": "5.7.0",
+    "@ethersproject/strings": "5.7.0",
     "@ethersproject/keccak256": "5.7.0",
     "@ethersproject/random": "5.7.0",
     "@ethersproject/signing-key": "5.7.0",
     "@ethersproject/contracts": "5.7.0",
+    "@ethersproject/providers": "5.7.0",
     "@types/node": "^24.7.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.5"
@@ -38,9 +40,11 @@
     "@ethersproject/sha2": "5.7.0",
     "@ethersproject/abi": "5.7.0",
     "@ethersproject/bytes": "5.7.0",
+    "@ethersproject/strings": "5.7.0",
     "@ethersproject/keccak256": "5.7.0",
     "@ethersproject/random": "5.7.0",
     "@ethersproject/signing-key": "5.7.0",
-    "@ethersproject/contracts": "5.7.0"
+    "@ethersproject/contracts": "5.7.0",
+    "@ethersproject/providers": "5.7.0"
   }
 }

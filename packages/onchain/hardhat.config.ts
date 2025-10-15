@@ -5,6 +5,7 @@ import "@nomicfoundation/hardhat-verify";
 import '@typechain/hardhat';
 import { HardhatUserConfig, vars } from 'hardhat/config';
 import './tasks/compile';
+import './tasks/deploy';
 
 const config: HardhatUserConfig = {
   networks: {
@@ -13,6 +14,13 @@ const config: HardhatUserConfig = {
     },
     hardhat_local: {
       url: 'http://127.0.0.1:8545/',
+    },
+    sepolia: {
+      chainId: 11155111,
+      url: vars.get('SEPOLIA_RPC_URL', 'https://1rpc.io/sepolia'),
+      accounts: [
+        vars.get('PROJECT_KEY_TEST')
+      ]
     },
     polygon_amoy: {
       chainId: 80002,

@@ -43,6 +43,18 @@ export {
   Token
 } from './contracts';
 
+// Ethers compatibility layer
+export {
+  JsonRpcProvider,
+  Contract,
+  keccak256,
+  arrayify,
+  concat,
+  hexlify,
+  toUtf8Bytes,
+  randomBytes
+} from './ethers-compat';
+
 // Manager utilities
 export {
   ManagerContext,

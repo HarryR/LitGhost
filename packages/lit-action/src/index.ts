@@ -10,9 +10,10 @@
  * - Lit: The Lit Actions namespace with methods like setResponse, signEcdsa, etc.
  */
 
-import { validateJsParams } from './validation';
+import './lit-interfaces'; // Import to ensure global type definitions are loaded
+import { getParams } from './params';
 import { handleRequest } from './handler';
-import type { GhostResponse } from './types';
+import { GhostContext } from './context';
 
 /**
  * Environment variables are available via the ENV global
@@ -22,8 +23,10 @@ import type { GhostResponse } from './types';
  * Add new variables to .env.development and .env.production as needed.
  */
 declare const ENV: {
-  MODE: string;
-  VITE_TELEGRAM_BOT_API_KEY: string;
+  VITE_MODE: 'development' | 'production';
+  VITE_CHAIN: string;
+  VITE_CONTRACT_LITGHOST: string;
+  VITE_CONTRACT_TOKEN: string;
   // Add more VITE_* env vars here as needed
 };
 
@@ -31,56 +34,32 @@ declare const ENV: {
  * Main Lit Action function
  * This is the entry point that will be executed by the Lit Action runner
  *
- * Globals available (injected via jsParams):
+ * Parameters (passed via jsParams):
  * - ghostRequest: GhostRequest
- * - Lit: LitGlobalNamespace
+ *
+ * Globals available:
+ * - Lit: LitGlobalNamespace (or LitAuth/LitActions separately in v8)
+ * - ENV: Environment variables injected at build time
  */
 async function main() {
-  console.log('🚀 Lit Action starting (mode:', ENV.MODE + ')');
-
   try {
-    // Validate jsParams from global scope
-    const params = validateJsParams({
-      ghostRequest: globalThis.ghostRequest
-    });
-
-    console.log('✓ Validated jsParams:', {
-      requestType: params.ghostRequest.type
-    });
-
-    // Handle the request
-    const response: GhostResponse = await handleRequest(
-      params.ghostRequest
-    );
-
-    console.log('✓ Request handled:', response.success ? 'success' : 'error');
-
-    // Set response using Lit Actions API
-    // The response must be JSON-serializable
+    const jsParams = getParams();
+    const ctx = await GhostContext.fromEnv(ENV);
+    const response = await handleRequest(jsParams, ctx);
     Lit.Actions.setResponse({
       response: JSON.stringify(response),
     });
-
-    console.log('✓ Lit Action completed successfully');
-  } catch (error) {
-    console.error('✗ Lit Action failed:', error);
-
-    // Return error response
-    const errorResponse: GhostResponse = {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      details: error instanceof Error ? error.stack : String(error),
-    };
-
+  }
+  catch (error) {
     Lit.Actions.setResponse({
-      response: JSON.stringify(errorResponse),
+      response: JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
     });
   }
 }
 
 // Execute the main function
 // This is the entry point when the Lit Action is invoked
-main().catch((error) => {
-  console.error('✗ Fatal error in Lit Action:', error);
-  throw error;
-});
+main();

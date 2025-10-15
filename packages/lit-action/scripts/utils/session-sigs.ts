@@ -86,7 +86,6 @@ export async function getSessionSigsForPKP(
         nonce: await litNodeClient.getLatestBlockhash(),
         litNodeClient,
       });
-
       return await generateAuthSig({
         signer: wallet,
         toSign,

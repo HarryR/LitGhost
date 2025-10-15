@@ -9,7 +9,7 @@ docker-shell:
 	docker run --rm -ti \
 		--network=host \
 		-v $(PWD):/src \
-		-h parambulator \
+		-h litghost \
 		-e HISTFILE=/dev/null \
 		-e HOME=/src \
 		-e CARGO_HOME=/src/.cargo \

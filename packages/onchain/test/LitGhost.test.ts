@@ -59,7 +59,7 @@ describe("LitGhost Contract", function () {
 
     // Deploy LitGhost contract
     const LitGhostFactory = await ethers.getContractFactory("LitGhost");
-    lg = await LitGhostFactory.deploy(await token.getAddress(), owner.address);
+    lg = await LitGhostFactory.deploy(await token.getAddress());
     await lg.waitForDeployment();
 
     // Mint tokens to users

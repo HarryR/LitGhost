@@ -5,11 +5,6 @@
         "internalType": "contract IERC20_With_Extensions",
         "name": "in_token",
         "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "in_owner",
-        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -70,6 +65,32 @@
     ],
     "name": "OpDeposit",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "actions_entropy_ciphertext",
+    "outputs": [
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "actions_entropy_digest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [],
@@ -426,6 +447,24 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "getEncryptedEntropy",
+    "outputs": [
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint32[]",
@@ -731,6 +770,24 @@
         "type": "bool"
       }
     ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "ciphertext",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "digest",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setEncryptedEntropy",
+    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   }

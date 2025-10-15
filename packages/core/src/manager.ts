@@ -77,22 +77,22 @@ export class ManagerContext {
     realLeafIndices: Set<number>,
     opStart: bigint,
     opCount: bigint
-  ): Set<number> {
+  ): [Set<number>, Uint8Array] {
     const chaffLeaves = new Set<number>();
-
-    // If there are no leaves or no real updates, no chaff needed
-    if (totalLeafCount === 0 || realLeafIndices.size === 0) {
-      return chaffLeaves;
-    }
-
-    // Calculate target number of chaff leaves
-    const targetChaffCount = realLeafIndices.size * this.chaffMultiplier;
 
     // Base data for hashing: chaffSecret + opStart + opCount    
     let chaffSecret = namespacedHmac(this.teePrivateKey, NAMESPACE_CHAFF, Buffer.concat([
       Buffer.from(opStart.toString()),
       Buffer.from(opCount.toString())
     ]));
+
+    // If there are no leaves or no real updates, no chaff needed
+    if (totalLeafCount === 0 || realLeafIndices.size === 0) {
+      return [chaffLeaves, chaffSecret];
+    }
+
+    // Calculate target number of chaff leaves
+    const targetChaffCount = realLeafIndices.size * this.chaffMultiplier;
 
     let counter = 0;
     const maxAttempts = targetChaffCount * 10; // Prevent infinite loops
@@ -111,7 +111,7 @@ export class ManagerContext {
       counter++;
     }
 
-    return chaffLeaves;
+    return [chaffLeaves, chaffSecret];
   }
 
   /**
@@ -588,7 +588,7 @@ export class ManagerContext {
     const totalLeafCount = Math.ceil(currentUserCount / 6);
 
     // Select chaff leaves for privacy (deterministic based on opStart/opCount)
-    const chaffLeafIndices = this.selectChaffLeaves(
+    const [chaffLeafIndices, chaffSecret] = this.selectChaffLeaves(
       totalLeafCount,
       realLeafIndices,
       opStart,
@@ -600,10 +600,8 @@ export class ManagerContext {
 
     // Randomize leaf order for additional privacy (deterministic shuffle based on opStart)
     const shuffled = Array.from(allLeafIndices).sort((a, b) => {
-      const hashA = namespacedHmac(this.teePrivateKey, 'LitGhost.leaf.order',
-        Buffer.concat([Buffer.from(opStart.toString()), Buffer.from(a.toString())]));
-      const hashB = namespacedHmac(this.teePrivateKey, 'LitGhost.leaf.order',
-        Buffer.concat([Buffer.from(opStart.toString()), Buffer.from(b.toString())]));
+      const hashA = arrayify(keccak256(Buffer.concat([chaffSecret, Buffer.from(a.toString())])));
+      const hashB = arrayify(keccak256(Buffer.concat([chaffSecret, Buffer.from(b.toString())])));
       return Buffer.compare(hashA, hashB);
     });
 

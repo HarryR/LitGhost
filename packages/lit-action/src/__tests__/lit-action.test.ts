@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { executeLitAction, createPersistentState, type PersistentTestState } from '../test-server/executor';
 import { loadLitActionCode } from '../test-server/test-helpers';
-import type { GhostResponse } from '../types';
+import type { GhostResponse } from '../handler';
 
 describe('Lit Action', () => {
   let persistentState: PersistentTestState;
@@ -47,8 +47,8 @@ describe('Lit Action', () => {
 
       const response: GhostResponse = JSON.parse(result.response!);
 
-      expect(response.success).toBe(true);
-      if (response.success) {
+      expect(response.ok).toBe(true);
+      if (response.ok) {
         expect(response.data.echo).toBe('Hello from test!');
         expect(response.data.timestamp).toBeTypeOf('number');
       }
@@ -70,8 +70,8 @@ describe('Lit Action', () => {
 
       const response: GhostResponse = JSON.parse(result.response!);
 
-      expect(response.success).toBe(false);
-      if (!response.success) {
+      expect(response.ok).toBe(false);
+      if (!response.ok) {
         expect(response.error).toContain('message must be a string');
       }
     });
@@ -94,8 +94,8 @@ describe('Lit Action', () => {
 
       const response: GhostResponse = JSON.parse(result.response!);
 
-      expect(response.success).toBe(false);
-      if (!response.success) {
+      expect(response.ok).toBe(false);
+      if (!response.ok) {
         expect(response.error).toContain('Unknown ghostRequest type');
       }
     });

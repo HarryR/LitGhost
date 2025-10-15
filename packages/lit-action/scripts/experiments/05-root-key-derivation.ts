@@ -16,38 +16,162 @@
  * Run with: pnpm exp:05
  */
 
-import { createLitClient, disconnectLitClient } from '../utils/lit-client';
-import { getFundedTestWallet } from '../utils/test-wallets';
-import { getSessionSigsForPKP } from '../utils/session-sigs';
-import { loadPKP } from '../utils/pkp-storage';
+import { LitNodeClient } from '@lit-protocol/lit-node-client';
+import { LitContracts } from '@lit-protocol/contracts-sdk';
+//import type { LitNodeClient },  from '@lit-protocol/lit-node-client';
+import { LIT_NETWORK, LIT_RPC, AUTH_METHOD_SCOPE, AUTH_METHOD_TYPE } from '@lit-protocol/constants';
+import { ethers } from 'ethers';
+import { LIT_ABILITY } from '@lit-protocol/constants';
+import {
+  createSiweMessage,
+  generateAuthSig,
+  LitActionResource,
+  LitPKPResource,
+} from '@lit-protocol/auth-helpers';
+
+
+export async function createLitClient() {
+  console.log('Connecting to Lit Protocol (datil-dev network, SDK v7.3.0)...');
+
+  const litClient = new LitNodeClient({
+    litNetwork: LIT_NETWORK.DatilDev,
+    debug: false,
+  });
+
+  await litClient.connect();
+
+  console.log('✓ Connected to Lit Protocol');
+
+  return litClient;
+}
+
+/**
+ * Disconnect from Lit Protocol
+ */
+export async function disconnectLitClient(client: any): Promise<void> {
+  if (client.disconnect) {
+    await client.disconnect();
+  }
+  console.log('✓ Disconnected from Lit Protocol');
+}
+
+/**
+ * Hardcoded test private key for datil-dev experiments
+ * This is a randomly generated key used for testing PKP minting
+ * Safe to expose - only used for datil-dev testing network
+ */
+export const TEST_PRIVATE_KEY = '0xc77e929d6970d541accc8260402775b0ac6841413bd5f703afe4bd9c192e0bf0';
+
+/**
+ * Get the funded test wallet for PKP minting experiments
+ * Uses a hardcoded private key (safe to expose - only for datil-dev testing)
+ */
+export function getFundedTestWallet(provider?: ethers.providers.Provider): ethers.Wallet {
+  const wallet = new ethers.Wallet(TEST_PRIVATE_KEY, provider);
+  console.log('Using test wallet:', wallet.address);
+  return wallet;
+}
+
+export async function getSessionSigsForPKP(
+  litNodeClient: LitNodeClient,
+  wallet: ethers.Wallet,
+  pkpTokenId: string
+) {
+  console.log('Generating session signatures for PKP signing...');
+
+  const sessionSigs = await litNodeClient.getSessionSigs({
+    chain: 'ethereum',
+    expiration: new Date(Date.now() + 1000 * 60 * 10).toISOString(), // 10 minutes
+    resourceAbilityRequests: [
+      {
+        resource: new LitPKPResource(pkpTokenId),
+        ability: LIT_ABILITY.PKPSigning,
+      },
+      {
+        resource: new LitActionResource('*'),
+        ability: LIT_ABILITY.LitActionExecution,
+      },
+    ],
+    authNeededCallback: async ({ uri, expiration, resourceAbilityRequests }) => {
+      const toSign = await createSiweMessage({
+        uri,
+        expiration,
+        resources: resourceAbilityRequests,
+        walletAddress: wallet.address,
+        nonce: await litNodeClient.getLatestBlockhash(),
+        litNodeClient,
+      });
+
+      return await generateAuthSig({
+        signer: wallet,
+        toSign,
+      });
+    },
+  });
+
+  console.log('✓ Session signatures generated for PKP');
+
+  return sessionSigs;
+}
 
 async function main() {
   console.log('=== Experiment 05: Root Key Derivation ===\n');
 
   let litClient;
 
-  try {
-    // Step 1: Load PKP
-    console.log('Step 1: Load existing PKP');
-    const pkp = await loadPKP();
+  try {  
+      const provider = new ethers.providers.JsonRpcProvider(
+        LIT_RPC.CHRONICLE_YELLOWSTONE
+      );
+  
+      // Use the funded test wallet (hardcoded for datil-dev testing)
+      const wallet = getFundedTestWallet(provider);
+  
+      // Check balance
+      const balance = await wallet.getBalance();
+      console.log('  Balance:', ethers.utils.formatEther(balance), 'testnet ETH');
+  
+      if (balance.isZero()) {
+        console.log('\n⚠️  Wallet has zero balance!');
+        console.log('Send testnet funds to:', wallet.address);
+        console.log('Get testnet tokens for Chronicle Yellowstone (datil-dev)');
+        return;
+      }
 
-    if (!pkp) {
-      console.error('❌ No PKP found. Run experiment 02 first.');
-      return;
-    }
+      // Step 3: Initialize Lit Contracts SDK
+      const litContracts = new LitContracts({
+        signer: wallet,
+        network: LIT_NETWORK.DatilDev,
+      });
 
-    console.log('  PKP Address:', pkp.ethAddress);
-    console.log();
+      await litContracts.connect();
+  
+      // For EthWallet auth method, we just need to sign a simple message
+      // The auth signature will be generated as part of minting
+      const authSig = await wallet.signMessage('Sign to authorize PKP creation');
+  
+      const authMethod = {
+        authMethodType: AUTH_METHOD_TYPE.EthWallet,
+        accessToken: JSON.stringify({ sig: authSig, address: wallet.address }),
+      };
+  
+      const mintResult = await litContracts.mintWithAuth({
+        authMethod,
+        scopes: [AUTH_METHOD_SCOPE.SignAnything],
+      });
+  
+      const pkpInfo = mintResult.pkp;
+  
+      console.log('\n  ✅ PKP Minted Successfully!');
+      console.log('  Token ID:', pkpInfo.tokenId);
+      console.log('  Public Key:', pkpInfo.publicKey);
+      console.log('  ETH Address:', pkpInfo.ethAddress);
+      console.log();
 
     // Step 2: Connect and setup
     console.log('Step 2: Connect to Lit Protocol');
     litClient = await createLitClient();
-    const wallet = getFundedTestWallet();
-    const sessionSigs = await getSessionSigsForPKP(litClient, wallet, pkp.tokenId);
-    console.log();
-
-    // Step 3: Approach 1 - Sign a deterministic message to derive a root key
-    console.log('Step 3: Approach 1 - Derive key from deterministic signature');
+    const sessionSigs = await getSessionSigsForPKP(litClient, wallet, pkpInfo.tokenId);
 
     const approach1Code = `
 (async () => {
@@ -79,7 +203,7 @@ async function main() {
 
   Lit.Actions.setResponse({
     response: JSON.stringify({
-      approach: "deterministic_signature",
+      approach: "deterministic_signature?",
       rootKeyHash: rootKeyHash,
       hexSignature: hexSignature,
       signatureR: jsonSignature.r.substring(0, 20) + "...",
@@ -95,7 +219,7 @@ async function main() {
       code: approach1Code,
       sessionSigs,
       jsParams: {
-        publicKey: pkp.publicKey,
+        publicKey: pkpInfo.publicKey,
       },
     });
 
@@ -126,7 +250,7 @@ async function main() {
       code: approach1Code,
       sessionSigs,
       jsParams: {
-        publicKey: pkp.publicKey,
+        publicKey: pkpInfo.publicKey,
       },
     });
 
@@ -217,7 +341,7 @@ async function main() {
       code: approach2Code,
       sessionSigs,
       jsParams: {
-        publicKey: pkp.publicKey,
+        publicKey: pkpInfo.publicKey,
       },
     });
 

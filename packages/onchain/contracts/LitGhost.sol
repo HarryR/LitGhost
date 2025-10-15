@@ -53,6 +53,12 @@ struct UserInfo {
     Leaf leaf;
 }
 
+struct Entropy {
+    bytes ciphertext;
+    bytes32 digest;
+    Signature sig;
+}
+
 function packLeaf(Leaf memory leaf) pure returns (bytes32) {
     // Manual packing to avoid abi.encodePacked bug with calldata arrays
     bytes32 packed = bytes32(abi.encodePacked(
@@ -75,6 +81,7 @@ contract LitGhost {
     mapping(uint32 => Leaf) internal m_leaves;
 
     mapping(bytes32 => uint32) internal m_userIndices;
+
     mapping(uint32 => bytes32) m_indexToUser;
 
     OpCounters internal m_counters;
@@ -93,13 +100,29 @@ contract LitGhost {
 
     event LeafChange(uint32 indexed idx, bytes32 leaf);
 
-    constructor(IERC20_With_Extensions in_token, address in_owner)
+    Entropy internal m_entropy;
+
+    function setEntropy(Entropy calldata entropy)
+        public
+    {
+        // TODO: in production, only allow entropy to be set once!
+
+        m_entropy = entropy;
+    }
+
+    function getEntropy()
+        public view returns (Entropy memory)
+    {
+        return m_entropy;
+    }
+
+    constructor(IERC20_With_Extensions in_token)
     {
         m_token = in_token;
 
         m_decimals = in_token.decimals();
 
-        m_owner = in_owner;
+        m_owner = msg.sender;
 
         // Initialize userCount to 1, treating user ID 0 as a sentinel value
         // This allows us to distinguish "user doesn't exist" (returns 0) from actual users (>= 1)

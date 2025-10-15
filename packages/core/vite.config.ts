@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
     resolve: isSandboxed ? {
       alias: {
         // For sandboxed build, replace ethers-compat with sandboxed version
-        './ethers-compat.js': resolve(__dirname, 'src/ethers-compat.sandboxed.ts')
+        './ethers-compat.js': resolve(__dirname, 'src/ethers-compat.sandboxed.ts'),
+        './ethers-compat': resolve(__dirname, 'src/ethers-compat.sandboxed.ts'),
       }
     } : undefined,
     build: {
@@ -27,8 +28,8 @@ export default defineConfig(({ mode }) => {
       },
       rollupOptions: {
         // Standard build: keep @ethersproject external for tree-shaking
-        // Sandboxed build: keep everything external (uses globals)
-        external: [
+        // Sandboxed build: no externals (uses global ethers, no imports)
+        external: isSandboxed ? [] : [
           '@ethersproject/sha2',
           '@ethersproject/abi',
           '@ethersproject/bytes',
@@ -36,6 +37,8 @@ export default defineConfig(({ mode }) => {
           '@ethersproject/random',
           '@ethersproject/signing-key',
           '@ethersproject/contracts',
+          '@ethersproject/providers',
+          '@ethersproject/strings',
         ],
         output: {
           inlineDynamicImports: true,
