@@ -23,6 +23,15 @@ export function createLitMock(
   let capturedResponse: string | null = null;
 
   const Lit: LitGlobalNamespace = {
+    Auth: {
+      actionIpfsIds: ['QmRvJy4aj9FFqRR7rmTmqMXuDMdBUSXNooV7zbrzHouCXP'],
+      actionIpfsIdStack: ['QmRvJy4aj9FFqRR7rmTmqMXuDMdBUSXNooV7zbrzHouCXP'],
+      authSigAddress: '0xe7B5Bcc8d2656F438E50604e14bf668C577Cb994',
+      authMethodContexts: [],
+      resources: [],
+      customAuthResource: '',
+    },
+
     Actions: {
       /**
        * Mock setResponse - captures the response for the test server to return

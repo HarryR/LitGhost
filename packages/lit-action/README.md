@@ -88,7 +88,7 @@ Example usage in code:
 ```typescript
 declare const ENV: {
   MODE: string;
-  TELEGRAM_BOT_API_KEY: string;
+  VITE_TELEGRAM_BOT_API_KEY: string;
 };
 
 const apiKey = ENV.TELEGRAM_BOT_API_KEY;
@@ -98,9 +98,8 @@ const apiKey = ENV.TELEGRAM_BOT_API_KEY;
 
 ## Adding New Environment Variables
 
-1. Add the variable to `.env.example`, `.env.development`, and `.env.production`
-2. Update `vite.config.ts` to include it in the `ENV` object
-3. Update the type declaration in `src/index.ts`
+1. Add the variable to `.env.example`, `.env.development`, and `.env.production`, prefixed with `VITE_`
+2. Update the type declaration in `src/index.ts`
 
 ### Request Flow
 

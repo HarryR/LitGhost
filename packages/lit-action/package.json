@@ -11,9 +11,21 @@
     "build:prod": "vite build --mode production",
     "test": "vitest --run",
     "test:ui": "vitest --ui",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "exp:01": "tsx scripts/experiments/01-connect-and-auth.ts",
+    "exp:02": "tsx scripts/experiments/02-mint-pkp.ts",
+    "exp:03": "tsx scripts/experiments/03-derive-key.ts",
+    "exp:04": "tsx scripts/experiments/04-params-encryption.ts",
+    "exp:05": "tsx scripts/experiments/05-root-key-derivation.ts",
+    "exp:06": "tsx scripts/experiments/06-payment-delegation.ts",
+    "exp:07": "tsx scripts/experiments/07-encryption-and-ipfs-cid.ts",
+    "exp:08": "tsx scripts/experiments/08-encrypt-decrypt-roundtrip.ts"
   },
   "devDependencies": {
+    "@lit-protocol/auth-helpers": "7.3.1",
+    "@lit-protocol/constants": "7.3.1",
+    "@lit-protocol/contracts-sdk": "7.3.1",
+    "@lit-protocol/lit-node-client": "7.3.1",
     "@types/express": "^5.0.0",
     "@types/node": "^24.7.0",
     "@types/supertest": "^6.0.2",

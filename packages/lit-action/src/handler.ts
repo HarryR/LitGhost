@@ -3,14 +3,8 @@
  * Pattern matches on ghostRequest type and executes appropriate logic
  */
 
-import type { GhostRequest, GhostResponse } from './types';
-import {
-  isGhostRequestEcho
-} from './validation';
-
-// Import from core library (will be bundled into single file)
-// Uncomment when you need these:
-// import { computeTranscript } from '@monorepo/core';
+import type { GhostRequest, GhostResponse, GhostRequestEcho } from './types';
+import { validateEchoRequest } from './validation';
 
 /**
  * Main request handler
@@ -22,8 +16,10 @@ export async function handleRequest(
 ): Promise<GhostResponse> {
   try {
     // Pattern match on request type
-    if (isGhostRequestEcho(request)) {
-      return handleEcho(request);
+    // Validate and dispatch to appropriate handler
+    if (request.type === 'echo') {
+      const validatedRequest = validateEchoRequest(request);
+      return handleEcho(validatedRequest);
     }
 
     // This should never happen if validation is correct
@@ -49,7 +45,7 @@ export async function handleRequest(
 /**
  * Handle echo request - simple test that returns the message
  */
-function handleEcho(request: GhostRequest & { type: 'echo' }): GhostResponse {
+function handleEcho(request: GhostRequestEcho): GhostResponse {
   return {
     success: true,
     data: {

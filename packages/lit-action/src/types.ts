@@ -87,9 +87,45 @@ export interface LitActionsNamespace {
 }
 
 /**
+ * Authentication context available in Lit Actions runtime
+ */
+export interface LitAuthNamespace {
+  /**
+   * IPFS CIDs of the action being executed (current and parent actions)
+   */
+  actionIpfsIds: string[];
+
+  /**
+   * Stack of IPFS CIDs representing the call chain
+   */
+  actionIpfsIdStack: string[];
+
+  /**
+   * Ethereum address that signed the auth signature
+   */
+  authSigAddress: string;
+
+  /**
+   * Authentication method contexts
+   */
+  authMethodContexts: any[];
+
+  /**
+   * Resources that were granted access
+   */
+  resources: any[];
+
+  /**
+   * Custom authentication resource if provided
+   */
+  customAuthResource: string;
+}
+
+/**
  * Global Lit namespace available in Lit Actions runtime
  */
 export interface LitGlobalNamespace {
+  Auth: LitAuthNamespace;
   Actions: LitActionsNamespace;
 }
 

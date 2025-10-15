@@ -1,6 +1,6 @@
 /**
  * Runtime validation for ghost requests
- * Provides type guards and validation functions
+ * Provides validator functions per request type
  */
 
 import type {
@@ -9,15 +9,22 @@ import type {
 } from './types';
 
 // ============================================================================
-// Type Guards
+// Request Type Validators
 // ============================================================================
 
-export function isGhostRequestEcho(req: GhostRequest): req is GhostRequestEcho {
-  return req.type === 'echo' && typeof (req as any).message === 'string';
+/**
+ * Validate echo request
+ * Throws descriptive errors if validation fails
+ */
+export function validateEchoRequest(req: any): GhostRequestEcho {
+  if (typeof req.message !== 'string') {
+    throw new Error('message must be a string');
+  }
+  return req as GhostRequestEcho;
 }
 
 // ============================================================================
-// Validation Functions
+// Main Validation Functions
 // ============================================================================
 
 /**
@@ -35,9 +42,9 @@ export function validateGhostRequest(value: unknown): GhostRequest {
     throw new Error('ghostRequest.type is required and must be a string');
   }
 
-  // Validate based on discriminator using type guards
-  if (isGhostRequestEcho(req)) {
-    return req;
+  // Validate based on discriminator - use specific validators per type
+  if (req.type === 'echo') {
+    return validateEchoRequest(req);
   }
 
   throw new Error(`Unknown ghostRequest type: ${req.type}`);
