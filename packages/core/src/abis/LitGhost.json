@@ -68,32 +68,6 @@
   },
   {
     "inputs": [],
-    "name": "actions_entropy_ciphertext",
-    "outputs": [
-      {
-        "internalType": "bytes",
-        "name": "",
-        "type": "bytes"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "actions_entropy_digest",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "collectDust",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -448,17 +422,46 @@
   },
   {
     "inputs": [],
-    "name": "getEncryptedEntropy",
+    "name": "getEntropy",
     "outputs": [
       {
-        "internalType": "bytes",
+        "components": [
+          {
+            "internalType": "bytes",
+            "name": "ciphertext",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "digest",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "v",
+                "type": "uint8"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "r",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "s",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct Signature",
+            "name": "sig",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct Entropy",
         "name": "",
-        "type": "bytes"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
+        "type": "tuple"
       }
     ],
     "stateMutability": "view",
@@ -784,9 +787,24 @@
         "internalType": "bytes32",
         "name": "digest",
         "type": "bytes32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "v",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "r",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "s",
+        "type": "bytes32"
       }
     ],
-    "name": "setEncryptedEntropy",
+    "name": "setEntropy",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

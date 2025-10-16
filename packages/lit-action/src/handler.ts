@@ -6,7 +6,7 @@
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
 import { type JsParams, GhostRequestEcho, GhostRequestBootstrap } from './params';
 import type { GhostContext } from './context';
-import { randomBytes, arrayify, keccak256, concat } from '@monorepo/core/sandboxed';
+import { randomBytes, arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
 
 export interface GhostResponseSuccess<T = any> {
   ok: true;
@@ -110,31 +110,48 @@ function getCurrentIPFSCid() {
 async function handleBootstrap(request: GhostRequestBootstrap): Promise<GhostResponse> {
   const currentCid = getCurrentIPFSCid();
 
+  const accessControlConditions = litCidAccessControl(currentCid);
+
   const encryptResultJson = await Lit.Actions.runOnce({waitForResponse: true, name: "generate-entropy"}, async () => {
-      let encrypted = await Lit.Actions.encrypt({
-        accessControlConditions: litCidAccessControl(currentCid),
-        to_encrypt: randomBytes(64),
-      });
-      return JSON.stringify(encrypted);
+    const entropy = hexlify(randomBytes(32));
+    let encryptResult = await Lit.Actions.encrypt({
+      accessControlConditions,
+      to_encrypt: new TextEncoder().encode(entropy),
+    });
+    return JSON.stringify({encryptResult, entropy});
   });
-  const encryptResult = JSON.parse(encryptResultJson!);
+  const {entropy,encryptResult} = JSON.parse(encryptResultJson!);
+
+  const decrypted = await Lit.Actions.decryptAndCombine({
+    accessControlConditions,
+    ciphertext: encryptResult.ciphertext,
+    dataToEncryptHash: encryptResult.dataToEncryptHash,
+    authSig: null,
+    chain: 'ethereum'
+  });
+  if( decrypted !== entropy ) {
+    throw new Error("Could not decrypt entropy, round-trip fails!");
+  }
 
   const dataHashBytes = arrayify('0x'+encryptResult.dataToEncryptHash);
   const ciphertextBytes = base64ToBytes(encryptResult.ciphertext);
-
   const toSign = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes])));
-  const signatureHex = await Lit.Actions.signAndCombineEcdsa({
+  const signature = JSON.parse(await Lit.Actions.signAndCombineEcdsa({
     toSign,
     publicKey: request.pkpPublicKey,
     sigName: 'bootstrap-sig',
-  });
+  }));
 
   return {
     ok: true,
     data: {
       pkp: request.pkpPublicKey,
+      accessControlConditions,
+      dataToEncryptHash: encryptResult.dataToEncryptHash,
+      ciphertext: encryptResult.ciphertext,
       encryptResult: encryptResult,
-      sigHex: signatureHex,
+      signature: signature,
+      currentCid,
     },
   }
 }

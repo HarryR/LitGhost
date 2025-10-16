@@ -18,7 +18,7 @@
     "compile": "hardhat compile",
     "build": "hardhat compile",
     "test": "hardhat test",
-    "deploy:sepolia": "hardhat run scripts/deploy-litghost.ts --network sepolia"
+    "deploy:sepolia": "hardhat --network sepolia deploy"
   },
   "dependencies": {
     "@monorepo/core": "workspace:*",

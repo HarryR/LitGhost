@@ -29,7 +29,7 @@ export interface LitActionsNamespace {
       toSign:Uint8Array,
       publicKey:string,
       sigName:string,
-    }): Promise<Uint8Array>;
+    }): Promise<string>;
 
   /**
    * Run a function once across the node cohort (only the leader executes)

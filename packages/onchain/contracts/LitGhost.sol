@@ -102,12 +102,16 @@ contract LitGhost {
 
     Entropy internal m_entropy;
 
-    function setEntropy(Entropy calldata entropy)
+    function setEntropy(bytes calldata ciphertext, bytes32 digest, uint8 v, bytes32 r, bytes32 s)
         public
     {
         // TODO: in production, only allow entropy to be set once!
 
-        m_entropy = entropy;
+        m_entropy = Entropy({
+            ciphertext: ciphertext,
+            digest: digest,
+            sig: Signature({v: v, r: r, s: s})
+        });
     }
 
     function getEntropy()
