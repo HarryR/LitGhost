@@ -54,8 +54,9 @@ struct UserInfo {
 }
 
 struct Entropy {
-    bytes ciphertext;
+    string ciphertext;
     bytes32 digest;
+    string ipfsCid;
     Signature sig;
 }
 
@@ -102,16 +103,12 @@ contract LitGhost {
 
     Entropy internal m_entropy;
 
-    function setEntropy(bytes calldata ciphertext, bytes32 digest, uint8 v, bytes32 r, bytes32 s)
+    function setEntropy(Entropy calldata in_entropy)
         public
     {
         // TODO: in production, only allow entropy to be set once!
 
-        m_entropy = Entropy({
-            ciphertext: ciphertext,
-            digest: digest,
-            sig: Signature({v: v, r: r, s: s})
-        });
+        m_entropy = in_entropy;
     }
 
     function getEntropy()

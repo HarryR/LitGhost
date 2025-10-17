@@ -35,6 +35,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
+import FormData from 'form-data';
 
 // ES module __dirname replacement
 const __filename = fileURLToPath(import.meta.url);
@@ -135,12 +136,113 @@ Examples:
 
 function loadEnvFile(mode: 'development' | 'production') {
   const envPath = path.join(__dirname, `../.env.${mode}`);
+  const envLocalPath = path.join(__dirname, `../.env.${mode}.local`);
+
   if (fs.existsSync(envPath)) {
     console.log(`Loading environment from: .env.${mode}`);
     config({ path: envPath });
   } else {
     console.warn(`Warning: .env.${mode} file not found at ${envPath}`);
   }
+
+  // Load .env.{mode}.local to override/add secrets (e.g., Pinata API keys)
+  if (fs.existsSync(envLocalPath)) {
+    console.log(`Loading local environment overrides from: .env.${mode}.local`);
+    config({ path: envLocalPath, override: true });
+  }
+}
+
+/**
+ * Update the app's .env.{mode} file with the IPFS CID
+ */
+function updateAppEnvFile(mode: string, ipfsCid: string) {
+  const appEnvPath = path.join(__dirname, `../../app/.env.${mode}`);
+
+  if (!fs.existsSync(appEnvPath)) {
+    console.log(`  ⚠️  App .env.${mode} file not found at ${appEnvPath}`);
+    return;
+  }
+
+  try {
+    let envContent = fs.readFileSync(appEnvPath, 'utf8');
+    const varName = 'VITE_GHOST_IPFSCID';
+    const newLine = `${varName}=${ipfsCid}`;
+
+    // Check if the variable already exists
+    const regex = new RegExp(`^${varName}=.*$`, 'm');
+    if (regex.test(envContent)) {
+      // Replace existing value
+      envContent = envContent.replace(regex, newLine);
+      console.log(`  ✓ Updated ${varName} in packages/app/.env.${mode}`);
+    } else {
+      // Add new line
+      envContent = envContent.trim() + '\n' + newLine + '\n';
+      console.log(`  ✓ Added ${varName} to packages/app/.env.${mode}`);
+    }
+
+    fs.writeFileSync(appEnvPath, envContent, 'utf8');
+  } catch (error: any) {
+    console.log(`  ❌ Failed to update app .env file:`, error.message);
+  }
+}
+
+/**
+ * Pin Lit Action to IPFS using Pinata's dedicated gateway
+ * Uses standard IPFS HTTP API to ensure CID matches ipfs-only-hash
+ * Requires PINATA_JWT environment variable
+ */
+async function pinToIPFS(code: string, mode: string): Promise<string | null> {
+  const pinataJwt = process.env.PINATA_JWT;
+
+  if (!pinataJwt) {
+    console.log('  ⚠️  Skipping IPFS pinning: PINATA_JWT not set in .env.{mode}.local');
+    return null;
+  }
+
+  console.log('  Pinning Lit Action to IPFS via Pinata...');
+
+  // Add to IPFS using Pinata's API with form-data
+  const form = new FormData();
+  form.append('file', Buffer.from(code, 'utf8'), {
+    filename: `lit-action-${mode}.js`,
+    contentType: 'application/javascript',
+  });
+
+  // Use a Promise-based approach with form-data's submit method
+  const addData: any = await new Promise((resolve, reject) => {
+    form.submit({
+      protocol: 'https:',
+      host: 'api.pinata.cloud',
+      path: '/pinning/pinFileToIPFS',
+      headers: {
+        'Authorization': `Bearer ${pinataJwt}`,
+      },
+    }, (err, res) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+        } else {
+          resolve(JSON.parse(data));
+        }
+      });
+      res.on('error', reject);
+    });
+  });
+
+  const cid = addData.IpfsHash;
+
+  console.log('  ✅ Pinned to IPFS!');
+  console.log('    CID:', cid);
+  console.log('    Pinata URL:', `https://gateway.pinata.cloud/ipfs/${cid}`);
+
+  return cid;
 }
 
 export async function getSessionSigsForAction(
@@ -158,8 +260,8 @@ export async function getSessionSigsForAction(
         resource: new LitActionResource(ipfsCid),
         ability: LIT_ABILITY.LitActionExecution,
       },
-      // This is weird... an empty LitAction resource ability is required
-      // Otherwise decryption fails in the 'bootstrap' LitAction handler!s
+      // XXX: This is weird... an empty LitAction resource ability is required!
+      //      Otherwise decryption fails in the 'bootstrap' LitAction handler
       {
         resource: new LitActionResource(''),
         ability: LIT_ABILITY.LitActionExecution,
@@ -247,15 +349,10 @@ async function main() {
     // Determine lit action path based on mode
     const litActionPath = path.join(__dirname, `../dist/lit-action.${bootstrapConfig.mode}.js`);
 
-    // Step 1: Read and compute IPFS CID of the Lit Action
-    console.log('Step 1: Load Lit Action code');
-
     if (!fs.existsSync(litActionPath)) {
       throw new Error(`Lit Action not built. Run 'pnpm build' first. Looking for: ${litActionPath}`);
     }
-
-    // Step 2: Setup Ethereum wallet
-    console.log('Step 2: Setup Ethereum wallet');
+  
     const provider = new ethers.providers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE);
     const wallet = getFundedTestWallet(provider);
     const balance = await wallet.getBalance();
@@ -270,11 +367,9 @@ async function main() {
     }
     console.log();
 
-    // Step 3: Initialize Lit Contracts SDK
-    console.log('Step 3: Initialize Lit Contracts SDK');
+    // Initialize Lit Contracts SDK
     const litContracts = new LitContracts({signer: wallet, network: bootstrapConfig.network});
     await litContracts.connect();
-    console.log('  ✓ Connected to Lit Contracts');
 
     const litActionCode = fs.readFileSync(litActionPath, 'utf8');
     const ipfsCid = await Hash.of(litActionCode);
@@ -283,6 +378,21 @@ async function main() {
     console.log('  IPFS CID:', ipfsCid);
     console.log();
 
+    // Step 4: Pin to IPFS via Pinata (optional) and update app .env
+    console.log('Step 4: Pin Lit Action to IPFS and update app config');
+    const pinataCid = await pinToIPFS(litActionCode, bootstrapConfig.mode);
+    if (pinataCid && pinataCid !== ipfsCid) {
+      console.log('  ⚠️  Warning: Pinata CID does not match computed CID!');
+      console.log('    Computed:', ipfsCid);
+      console.log('    Pinata:', pinataCid);
+    }
+
+    // Update app's .env file with the IPFS CID
+    updateAppEnvFile(bootstrapConfig.mode, ipfsCid);
+    console.log();
+
+    // Step 5: Mint PKP restricted to Lit Action
+    console.log('Step 5: Mint PKP restricted to Lit Action');
     const pkp = await mintRestricted(litContracts, ipfsCid);
 
     console.log('  ✅ PKP Minted!');
@@ -292,18 +402,18 @@ async function main() {
     console.log('    Restricted to IPFS CID:', ipfsCid);
     console.log();
 
-    // Step 5: Connect to Lit Protocol
-    console.log('Step 5: Connect to Lit Protocol');
+    // Step 6: Connect to Lit Protocol
+    console.log('Step 6: Connect to Lit Protocol');
     litClient = await createLitClient(bootstrapConfig.network, bootstrapConfig.debug);
 
-    // Step 6: Get session signatures
-    console.log('Step 6: Get session signatures');
+    // Step 7: Get session signatures
+    console.log('Step 7: Get session signatures');
     const sessionSigs = await getSessionSigsForAction(litClient, wallet, ipfsCid);
     console.log('  ✓ Session signatures obtained');
     console.log();
 
-    // Step 7: Execute the bootstrap Lit Action
-    console.log('Step 7: Execute bootstrap Lit Action');
+    // Step 8: Execute the bootstrap Lit Action
+    console.log('Step 8: Execute bootstrap Lit Action');
 
     const result = await litClient.executeJs({
       code: litActionCode,
@@ -344,6 +454,41 @@ async function main() {
     console.log('       Access Control:', data.accessControlConditions);
     console.log();
 
+    // Verify signature
+    console.log('  Verifying signature...');
+    try {
+      const sig = data.signature;
+
+      // Reconstruct the message that was signed (same as in handler.ts)
+      const dataHashBytes = ethers.utils.arrayify('0x' + data.dataToEncryptHash);
+      // Ciphertext is base64-encoded, decode it to bytes (same as handler.ts)
+      const ciphertextBytes = new TextEncoder().encode(data.ciphertext);
+      const cidBytes = new TextEncoder().encode(data.currentCid);
+      const messageBytes = ethers.utils.concat([dataHashBytes, ciphertextBytes, cidBytes]);
+      const messageHash = ethers.utils.keccak256(messageBytes);
+
+      // Recover the signer address from the signature
+      const recoveredAddress = ethers.utils.recoverAddress(messageHash, {
+        r: sig.r,
+        s: sig.s,
+        v: sig.v,
+      });
+
+      console.log('    Recovered Address:', recoveredAddress);
+      console.log('    Expected Address:', pkp.ethAddress);
+      console.log('    Signature Valid:', recoveredAddress.toLowerCase() === pkp.ethAddress.toLowerCase());
+
+      if (recoveredAddress.toLowerCase() !== pkp.ethAddress.toLowerCase()) {
+        throw new Error(`Signature verification failed! Recovered ${recoveredAddress} but expected ${pkp.ethAddress}`);
+      }
+
+      console.log('  ✅ Signature verified successfully!');
+    } catch (error: any) {
+      console.log('  ❌ Signature verification error:', error.message);
+      throw error;
+    }
+    console.log();
+
     console.log('✅ Bootstrap complete!\n');
     console.log('='.repeat(80));
     console.log('PKP INFORMATION (save this):');
@@ -362,8 +507,8 @@ async function main() {
     console.log('='.repeat(80));
     console.log();
 
-    // Step 8: Store entropy on LitGhost contract
-    console.log('Step 8: Store entropy on LitGhost contract');
+    // Step 9: Store entropy on LitGhost contract
+    console.log('Step 9: Store entropy on LitGhost contract');
 
     // Get chain and contract address from env
     const chainName = process.env.VITE_CHAIN;
@@ -401,33 +546,22 @@ async function main() {
           const sig = data.signature;
           console.log('  Signature from Lit:', JSON.stringify(sig));
 
-          // Strip the SECG compression byte (first byte: 02 or 03) from r
-          const rWithoutPrefix = sig.r.slice(2); // Remove '03' or '02' prefix
-
-          const formattedSig = {
-            v: sig.v,
-            r: '0x' + rWithoutPrefix,
-            s: '0x' + sig.s
-          };
-          console.log('  Formatted signature for contract:', JSON.stringify(formattedSig));
-
           // Convert ciphertext ASCII string to bytes using TextEncoder
           // The ciphertext is an ASCII string (implementation detail: currently base64)
           // We encode it as bytes for the contract
-          const ciphertextBytes = new TextEncoder().encode(data.ciphertext);
-          const ciphertextHex = ethers.utils.hexlify(ciphertextBytes);
+          //const ciphertextBytes = new TextEncoder().encode(data.ciphertext);
+          //const ciphertextHex = ethers.utils.hexlify(ciphertextBytes);
 
           // Call setEntropy with individual parameters (avoids struct encoding issues)
           // Manual gas limit needed because estimation fails for SSTORE operations
           // The ciphertext storage alone needs ~20k per 32 bytes, plus struct overhead
           console.log('  Calling setEntropy...');
-          const tx = await litGhostContract.setEntropy(
-            ciphertextHex,
-            '0x' + data.dataToEncryptHash,
-            formattedSig.v,
-            formattedSig.r,
-            formattedSig.s,
-            { gasLimit: 350000 } // Manual gas limit: actual usage ~274k for ciphertext + struct fields
+          const tx = await litGhostContract.setEntropy({
+            ciphertext: data.ciphertext,
+            digest: '0x' + data.dataToEncryptHash,
+            ipfsCid,
+            sig,
+            }, { gasLimit: 450000 } // XXX: gas estimation fails?
           );
           console.log('  Transaction hash:', tx.hash);
 
@@ -475,38 +609,8 @@ async function main() {
           console.log();
         } catch (error: any) {
           console.log('  ❌ Error storing entropy on-chain:', error.message);
-          console.log('  Continuing with bootstrap output...');
-          console.log();
-
-          // Still write output file even if on-chain storage fails
-          const outputData = {
-            network: bootstrapConfig.network,
-            mode: bootstrapConfig.mode,
-            timestamp: new Date().toISOString(),
-            pkp: {
-              tokenId: pkp.tokenId,
-              publicKey: pkp.publicKey,
-              ethAddress: pkp.ethAddress,
-            },
-            litAction: {
-              ipfsCid,
-              path: litActionPath,
-              size: litActionCode.length,
-            },
-            encryptedData: {
-              ciphertext: data.ciphertext,
-              dataHash: data.dataToEncryptHash,
-              signature: data.signature,
-              accessControlConditions: data.accessControlConditions,
-            },
-            onchain: {
-              error: error.message,
-            },
-          };
-
-          fs.writeFileSync(bootstrapConfig.outputFile, JSON.stringify(outputData, null, 2), 'utf8');
-          console.log('  ✓ Bootstrap data written to:', bootstrapConfig.outputFile);
-          console.log();
+          console.log('  Bootstrap failed - entropy must be stored on-chain to complete bootstrap');
+          throw error;
         }
       }
     }

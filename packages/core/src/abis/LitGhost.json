@@ -427,14 +427,19 @@
       {
         "components": [
           {
-            "internalType": "bytes",
+            "internalType": "string",
             "name": "ciphertext",
-            "type": "bytes"
+            "type": "string"
           },
           {
             "internalType": "bytes32",
             "name": "digest",
             "type": "bytes32"
+          },
+          {
+            "internalType": "string",
+            "name": "ipfsCid",
+            "type": "string"
           },
           {
             "components": [
@@ -779,29 +784,48 @@
   {
     "inputs": [
       {
-        "internalType": "bytes",
-        "name": "ciphertext",
-        "type": "bytes"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "digest",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint8",
-        "name": "v",
-        "type": "uint8"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "r",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "s",
-        "type": "bytes32"
+        "components": [
+          {
+            "internalType": "string",
+            "name": "ciphertext",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "digest",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "string",
+            "name": "ipfsCid",
+            "type": "string"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "v",
+                "type": "uint8"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "r",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "s",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct Signature",
+            "name": "sig",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct Entropy",
+        "name": "in_entropy",
+        "type": "tuple"
       }
     ],
     "name": "setEntropy",

@@ -8,7 +8,20 @@
  */
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { JsonRpcProvider, Contract, LitGhost, Token } from '@monorepo/core/sandboxed';
+import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac } from '@monorepo/core/sandboxed';
+
+interface EntropySig {
+  v: number;
+  r: string;
+  s: string;
+}
+
+interface Entropy {
+  ciphertext: string;
+  digest: string;
+  ipfsCid: string;
+  sig: EntropySig;
+}
 
 export class GhostContext {
   /** Ethers v5 JSON-RPC provider */
@@ -19,6 +32,8 @@ export class GhostContext {
 
   /** MockToken contract instance */
   public readonly token: Contract;
+
+  #entropy: Uint8Array|null;
 
   /**
    * Create a new GhostContext
@@ -32,12 +47,64 @@ export class GhostContext {
     ghostAddress: string,
     tokenAddress: string
   ) {
-    // Create provider
-    this.provider = new JsonRpcProvider(rpcUrl);
+    this.#entropy = null;
 
-    // Attach contract instances to addresses with provider
-    this.ghost = LitGhost.connect(this.provider); //.attach(ghostAddress);
-    this.token = Token.connect(this.provider); // attach(tokenAddress)
+    this.provider = new JsonRpcProvider(rpcUrl);
+    this.ghost = LitGhost.connect(this.provider).attach(ghostAddress);
+    this.token = Token.connect(this.provider).attach(tokenAddress);
+  }
+
+  litCidAccessControl(cid?:string) {
+    if( cid === undefined || cid === null ) {
+      cid = this.getCurrentIPFSCid();
+    }
+    return [
+      {
+        contractAddress: '',
+        standardContractType: '',
+        chain: 'ethereum',
+        method: '',
+        parameters: [':currentActionIpfsId'],
+        returnValueTest: {
+          comparator: '=',
+          value: cid,
+        },
+      },
+    ];
+  }
+  
+  getCurrentIPFSCid() {
+    const currentCid = Lit.Auth.actionIpfsIdStack?.[0] || Lit.Auth.actionIpfsIds?.[0];
+    if (!currentCid) {
+      throw new Error('Could not get current action IPFS CID');
+    }
+    return currentCid;
+  }
+
+  async entropy (): Promise<Uint8Array>
+  {
+    if( this.#entropy === null )
+    {
+      const e = await this.ghost.getEntropy() as Entropy;
+
+      // Recover signing address, to bind entropy to signer
+      const dataHashBytes = arrayify(e.digest);
+      const ciphertextBytes = new TextEncoder().encode(e.ciphertext);
+      const cidBytes = new TextEncoder().encode(this.getCurrentIPFSCid());
+      const digest = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes, cidBytes])));
+      const pkpEthAddress = verifyMessage(digest, e.sig);
+
+      const decrypted = await Lit.Actions.decryptAndCombine({
+        accessControlConditions: this.litCidAccessControl(),
+        ciphertext: e.ciphertext,
+        dataToEncryptHash: e.digest,
+        authSig: null,
+        chain: 'ethereum'
+      });
+
+      this.#entropy = namespacedHmac(decrypted, this.getCurrentIPFSCid(), arrayify(pkpEthAddress));
+    }
+    return this.#entropy;
   }
 
   /**
@@ -51,16 +118,7 @@ export class GhostContext {
     VITE_CONTRACT_LITGHOST: string;
     VITE_CONTRACT_TOKEN: string;
   }): Promise<GhostContext> {
-    // Get RPC URL for the chain using Lit.Actions.getRpcUrl
     const rpcUrl = await Lit.Actions.getRpcUrl({ chain: env.VITE_CHAIN });
-
-    console.log('✓ Creating GhostContext:', {
-      chain: env.VITE_CHAIN,
-      rpcUrl,
-      ghostAddress: env.VITE_CONTRACT_LITGHOST,
-      tokenAddress: env.VITE_CONTRACT_TOKEN,
-    });
-
     return new GhostContext(
       rpcUrl,
       env.VITE_CONTRACT_LITGHOST,

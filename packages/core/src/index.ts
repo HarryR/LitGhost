@@ -52,7 +52,8 @@ export {
   concat,
   hexlify,
   toUtf8Bytes,
-  randomBytes
+  randomBytes,
+  verifyMessage
 } from './ethers-compat';
 
 // Manager utilities

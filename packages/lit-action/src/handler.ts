@@ -22,21 +22,6 @@ export interface GhostResponseError {
 export type GhostResponse<T = any> = GhostResponseSuccess<T> | GhostResponseError;
 
 /**
- * Convert base64 string to Uint8Array
- * atob() returns a "binary string" where each char represents a byte (0-255)
- * charCodeAt() extracts the numeric byte value from each character
- * This is the standard browser/Deno way to decode base64 to bytes
- */
-function base64ToBytes(base64: string): Uint8Array {
-  const binaryString = atob(base64.replace(/\s/g, ''));
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i) & 0xFF; // Ensure byte range
-  }
-  return bytes;
-}
-
-/**
  * Main request handler
  * Takes validated jsParams and context, returns a response
  * Does NOT call Lit.Actions.setResponse - that's done in main()
@@ -46,12 +31,12 @@ function base64ToBytes(base64: string): Uint8Array {
  */
 export async function handleRequest(
   {ghostRequest}: JsParams,
-  _ctx: GhostContext
+  ctx: GhostContext
 ): Promise<GhostResponse> {
   try {
     switch( ghostRequest.type ) {
       case 'echo': return handleEcho(ghostRequest as GhostRequestEcho);
-      case 'bootstrap': return await handleBootstrap(ghostRequest as GhostRequestBootstrap);
+      case 'bootstrap': return await handleBootstrap(ghostRequest as GhostRequestBootstrap, ctx);
       default: return { ok: false, error: `Unknown request type: ${(ghostRequest as any).type}` };
     }
   } catch (error) {
@@ -80,37 +65,28 @@ function handleEcho(request: GhostRequestEcho): GhostResponse {
   };
 }
 
-function litCidAccessControl(cid:string) {
-  return [
-    {
-      contractAddress: '',
-      standardContractType: '',
-      chain: 'ethereum',
-      method: '',
-      parameters: [':currentActionIpfsId'],
-      returnValueTest: {
-        comparator: '=',
-        value: cid,
-      },
-    },
-  ];
+interface Sig {
+  v: number;
+  r: string;
+  s: string;
 }
 
-function getCurrentIPFSCid() {
-  const currentCid = Lit.Auth.actionIpfsIdStack?.[0] || Lit.Auth.actionIpfsIds?.[0];
-  if (!currentCid) {
-    throw new Error('Could not get current action IPFS CID');
+function litEcdsaSigToEthSig(sig: string): Sig {
+  const sigObj = JSON.parse(sig) as Sig;
+  return {
+    v: sigObj.v + 27,
+    r: '0x' + sigObj.r.slice(2),  // Lit returns SECG prefixed compressed public key! So 0x02 or 0x03 prefix,
+    s: '0x' + sigObj.s
   }
-  return currentCid;
 }
+
 /**
  * Handle bootstrap request - generates entropy, encrypts it, and signs it
  * This initializes the system with a secret that only this Lit Action can decrypt
  */
-async function handleBootstrap(request: GhostRequestBootstrap): Promise<GhostResponse> {
-  const currentCid = getCurrentIPFSCid();
-
-  const accessControlConditions = litCidAccessControl(currentCid);
+async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse> {
+  const currentCid = ctx.getCurrentIPFSCid();
+  const accessControlConditions = ctx.litCidAccessControl(currentCid);
 
   const encryptResultJson = await Lit.Actions.runOnce({waitForResponse: true, name: "generate-entropy"}, async () => {
     const entropy = hexlify(randomBytes(32));
@@ -134,9 +110,10 @@ async function handleBootstrap(request: GhostRequestBootstrap): Promise<GhostRes
   }
 
   const dataHashBytes = arrayify('0x'+encryptResult.dataToEncryptHash);
-  const ciphertextBytes = base64ToBytes(encryptResult.ciphertext);
-  const toSign = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes])));
-  const signature = JSON.parse(await Lit.Actions.signAndCombineEcdsa({
+  const ciphertextBytes = new TextEncoder().encode(encryptResult.ciphertext);
+  const cidBytes = new TextEncoder().encode(currentCid);
+  const toSign = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes, cidBytes])));
+  const signature = litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
     toSign,
     publicKey: request.pkpPublicKey,
     sigName: 'bootstrap-sig',
