@@ -4,7 +4,7 @@
  */
 
 import { LitNodeClient } from '@lit-protocol/lit-node-client';
-import { LIT_NETWORK, LIT_NETWORK_VALUES } from '@lit-protocol/constants';
+import { LIT_NETWORK_VALUES } from '@lit-protocol/constants';
 
 
 

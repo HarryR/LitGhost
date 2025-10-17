@@ -4,23 +4,9 @@
  */
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { type JsParams, GhostRequestEcho, GhostRequestBootstrap } from './params';
+import { type JsParams, GhostRequestEcho, GhostRequestBootstrap, GhostResponse } from './params';
 import type { GhostContext } from './context';
 import { randomBytes, arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
-
-export interface GhostResponseSuccess<T = any> {
-  ok: true;
-  data: T;
-}
-
-export interface GhostResponseError {
-  ok: false;
-  error: string;
-  details?: any;
-}
-
-export type GhostResponse<T = any> = GhostResponseSuccess<T> | GhostResponseError;
-
 /**
  * Main request handler
  * Takes validated jsParams and context, returns a response

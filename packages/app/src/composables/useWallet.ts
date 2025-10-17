@@ -1,16 +1,17 @@
-import { ref, readonly, onUnmounted } from 'vue'
+import { ref, onUnmounted, shallowRef } from 'vue'
 import { ethers } from 'ethers'
-import { useEIP6963 } from './eip6963'
+import { useEIP6963, type EIP1193Provider } from './eip6963'
 
 // State
 const address = ref<string | null>(null)
 const chainId = ref<number | null>(null)
 const connected = ref(false)
 const connecting = ref(false)
-const provider = ref<ethers.providers.Web3Provider | null>(null)
-const signer = ref<ethers.Signer | null>(null)
+const provider = shallowRef<ethers.providers.Web3Provider | null>(null)
+const signer = shallowRef<ethers.Signer | null>(null)
+const rawProvider = shallowRef<EIP1193Provider | null>(null)
 
-let currentProvider: any = null // EIP-1193 provider
+let currentProvider: EIP1193Provider | null = null
 
 const eip6963 = useEIP6963()
 
@@ -28,6 +29,7 @@ function clearWalletState() {
   connected.value = false
   provider.value = null
   signer.value = null
+  rawProvider.value = null
 }
 
 // Event handlers
@@ -109,6 +111,7 @@ export function useWallet() {
       connected.value = true
       provider.value = ethersProvider
       signer.value = ethersProvider.getSigner()
+      rawProvider.value = walletProvider
 
       // Setup event listeners
       setupEventListeners(walletProvider)
@@ -175,12 +178,13 @@ export function useWallet() {
 
   return {
     // State
-    address: readonly(address),
-    chainId: readonly(chainId),
-    connected: readonly(connected),
-    connecting: readonly(connecting),
-    provider: readonly(provider),
-    signer: readonly(signer),
+    address,
+    chainId,
+    connected,
+    connecting,
+    provider,
+    signer,
+    rawProvider,
 
     // Actions
     connect,

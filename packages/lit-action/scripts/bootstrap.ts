@@ -153,9 +153,9 @@ function loadEnvFile(mode: 'development' | 'production') {
 }
 
 /**
- * Update the app's .env.{mode} file with the IPFS CID
+ * Update the app's .env.{mode} file with environment variables
  */
-function updateAppEnvFile(mode: string, ipfsCid: string) {
+function updateAppEnvFile(mode: string, envVars: Record<string, string>) {
   const appEnvPath = path.join(__dirname, `../../app/.env.${mode}`);
 
   if (!fs.existsSync(appEnvPath)) {
@@ -165,19 +165,22 @@ function updateAppEnvFile(mode: string, ipfsCid: string) {
 
   try {
     let envContent = fs.readFileSync(appEnvPath, 'utf8');
-    const varName = 'VITE_GHOST_IPFSCID';
-    const newLine = `${varName}=${ipfsCid}`;
 
-    // Check if the variable already exists
-    const regex = new RegExp(`^${varName}=.*$`, 'm');
-    if (regex.test(envContent)) {
-      // Replace existing value
-      envContent = envContent.replace(regex, newLine);
-      console.log(`  ✓ Updated ${varName} in packages/app/.env.${mode}`);
-    } else {
-      // Add new line
-      envContent = envContent.trim() + '\n' + newLine + '\n';
-      console.log(`  ✓ Added ${varName} to packages/app/.env.${mode}`);
+    // Process each environment variable
+    for (const [varName, value] of Object.entries(envVars)) {
+      const newLine = `${varName}=${value}`;
+
+      // Check if the variable already exists
+      const regex = new RegExp(`^${varName}=.*$`, 'm');
+      if (regex.test(envContent)) {
+        // Replace existing value
+        envContent = envContent.replace(regex, newLine);
+        console.log(`  ✓ Updated ${varName} in packages/app/.env.${mode}`);
+      } else {
+        // Add new line
+        envContent = envContent.trim() + '\n' + newLine + '\n';
+        console.log(`  ✓ Added ${varName} to packages/app/.env.${mode}`);
+      }
     }
 
     fs.writeFileSync(appEnvPath, envContent, 'utf8');
@@ -245,7 +248,7 @@ async function pinToIPFS(code: string, mode: string): Promise<string | null> {
   return cid;
 }
 
-export async function getSessionSigsForAction(
+async function getSessionSigsForAction(
   litNodeClient: LitNodeClient,
   wallet: ethers.Wallet,
   ipfsCid: string
@@ -254,7 +257,7 @@ export async function getSessionSigsForAction(
 
   const sessionSigs = await litNodeClient.getSessionSigs({
     chain: 'ethereum',
-    expiration: new Date(Date.now() + 1000 * 60 * 10).toISOString(), // 10 minutes
+    expiration: new Date(Date.now() + (1000 * 60 * 60)).toISOString(), // 1 hour
     resourceAbilityRequests: [
       {
         resource: new LitActionResource(ipfsCid),
@@ -356,6 +359,9 @@ async function main() {
     const provider = new ethers.providers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE);
     const wallet = getFundedTestWallet(provider);
     const balance = await wallet.getBalance();
+    
+    const hardCodedAppWalletSecret = ethers.utils.randomBytes(32);
+    const hardCodedAppWallet = new ethers.Wallet(hardCodedAppWalletSecret, provider);
 
     console.log('  Wallet Address:', wallet.address);
     console.log('  Balance:', ethers.utils.formatEther(balance), 'testnet ETH');
@@ -378,17 +384,14 @@ async function main() {
     console.log('  IPFS CID:', ipfsCid);
     console.log();
 
-    // Step 4: Pin to IPFS via Pinata (optional) and update app .env
-    console.log('Step 4: Pin Lit Action to IPFS and update app config');
+    // Step 4: Pin to IPFS via Pinata (optional)
+    console.log('Step 4: Pin Lit Action to IPFS');
     const pinataCid = await pinToIPFS(litActionCode, bootstrapConfig.mode);
     if (pinataCid && pinataCid !== ipfsCid) {
       console.log('  ⚠️  Warning: Pinata CID does not match computed CID!');
       console.log('    Computed:', ipfsCid);
       console.log('    Pinata:', pinataCid);
     }
-
-    // Update app's .env file with the IPFS CID
-    updateAppEnvFile(bootstrapConfig.mode, ipfsCid);
     console.log();
 
     // Step 5: Mint PKP restricted to Lit Action
@@ -409,7 +412,16 @@ async function main() {
     // Step 7: Get session signatures
     console.log('Step 7: Get session signatures');
     const sessionSigs = await getSessionSigsForAction(litClient, wallet, ipfsCid);
-    console.log('  ✓ Session signatures obtained');
+    console.log('  ✓ Session signatures obtained', sessionSigs);
+    console.log();
+
+    // Update app's .env file with IPFS CID and session signatures
+    console.log('Step 7.5: Update app .env file with IPFS CID and session signatures');
+    updateAppEnvFile(bootstrapConfig.mode, {
+      VITE_GHOST_IPFSCID: ipfsCid,
+      VITE_LIT_NETWORK: bootstrapConfig.network,
+      VITE_LIT_APP_WALLET_SECRET: ethers.utils.hexlify(hardCodedAppWalletSecret),
+    });
     console.log();
 
     // Step 8: Execute the bootstrap Lit Action
@@ -571,7 +583,7 @@ async function main() {
           console.log();
 
           // Step 9: Write output to JSON file
-          console.log('Step 9: Write bootstrap data to file');
+          console.log('Write bootstrap data to file');
           const outputData = {
             network: bootstrapConfig.network,
             mode: bootstrapConfig.mode,

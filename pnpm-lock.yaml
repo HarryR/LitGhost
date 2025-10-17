@@ -14,6 +14,24 @@ importers:
 
   packages/app:
     dependencies:
+      '@lit-protocol/auth-helpers':
+        specifier: 7.3.0
+        version: 7.3.0(bufferutil@4.0.9)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@lit-protocol/constants':
+        specifier: 7.3.0
+        version: 7.3.0(bufferutil@4.0.9)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@lit-protocol/lit-node-client':
+        specifier: 7.3.0
+        version: 7.3.0(bufferutil@4.0.9)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@lit-protocol/types':
+        specifier: 7.3.0
+        version: 7.3.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@monorepo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@monorepo/lit-action':
+        specifier: workspace:*
+        version: link:../lit-action
       '@noble/ed25519':
         specifier: ^3.0.0
         version: 3.0.0

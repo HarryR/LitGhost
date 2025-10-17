@@ -3,6 +3,20 @@
  * Provides validator functions per request type
  */
 
+
+export interface GhostResponseSuccess<T = any> {
+  ok: true;
+  data: T;
+}
+
+export interface GhostResponseError {
+  ok: false;
+  error: string;
+  details?: any;
+}
+
+export type GhostResponse<T = any> = GhostResponseSuccess<T> | GhostResponseError;
+
 /**
  * Parameters passed to the Lit Action via jsParams
  *

@@ -1,25 +1,76 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import { useWallet } from './composables/useWallet'
+import { useTokenBalance } from './composables/useTokenBalance'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { GhostClient } from './lit'
 
 const count = ref(0)
-const { address, chainId, connected, connecting, connect, disconnect, switchChain } = useWallet()
+const { address, chainId, connected, connecting, connect, disconnect, switchChain, rawProvider, provider } = useWallet();
+const gc = shallowRef<GhostClient>();
+
+// PYUSD token balance
+const { balance: pyusdBalance, loading: balanceLoading, error: balanceError } = useTokenBalance({
+  provider,
+  address,
+  tokenAddress: import.meta.env.VITE_PYUSD_TOKEN_ADDRESS,
+  pollInterval: 10000 // Poll every 10 seconds
+});
+
+const formattedBalance = computed(() => {
+  if (balanceLoading.value) return 'Loading...';
+  if (balanceError.value) return 'Error loading balance';
+  if (pyusdBalance.value === null) return '--';
+
+  // Format with browser's locale and 2 decimal places
+  const num = parseFloat(pyusdBalance.value);
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+});
+
+(async () => {
+  const x = new GhostClient(true);
+  await x.connect();;
+  gc.value = x;
+})();
 
 async function handleConnect() {
-  await connect()
+  await connect();
 }
 
 function handleDisconnect() {
-  disconnect()
+  disconnect();
 }
 
 function handleSwitchToSepolia() {
-  switchChain('0xaa36a7')
+  switchChain('0xaa36a7');
 }
+
+async function handleAddPYUSD() {
+  if (!rawProvider.value) return;
+
+  try {
+    // rawProvider.value is already the EIP-1193 provider
+    await rawProvider.value.request({
+      method: 'wallet_watchAsset',
+      params: {
+        type: 'ERC20',
+        options: {
+          address: import.meta.env.VITE_PYUSD_TOKEN_ADDRESS,
+          symbol: 'PYUSD',
+          decimals: 6,
+          image: 'https://s2.coinmarketcap.com/static/img/coins/64x64/27772.png'
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Failed to add PYUSD token:', error);
+  }
+}
+
+const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID in decimal
 </script>
 
 <template>
@@ -78,9 +129,22 @@ function handleSwitchToSepolia() {
 
             <Separator />
 
+            <div class="space-y-2">
+              <p class="text-sm text-muted-foreground">PYUSD Balance</p>
+              <div class="flex items-center gap-2">
+                <p class="text-2xl font-bold">{{ formattedBalance }}</p>
+                <span class="text-sm text-muted-foreground">PYUSD</span>
+              </div>
+            </div>
+
+            <Separator />
+
             <div class="flex flex-col sm:flex-row gap-3 pt-2">
-              <Button variant="secondary" @click="handleSwitchToSepolia" class="flex-1">
+              <Button v-if="!isSepoliaNetwork()" variant="secondary" @click="handleSwitchToSepolia" class="flex-1">
                 Switch to Sepolia
+              </Button>
+              <Button variant="outline" @click="handleAddPYUSD" class="flex-1">
+                Add PYUSD Token
               </Button>
               <Button variant="destructive" @click="handleDisconnect">
                 Disconnect

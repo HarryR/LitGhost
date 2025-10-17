@@ -1,8 +1,11 @@
+// XXX: lit protocol barfs without this!
+window.global ||= window;
+
 import { createApp } from 'vue'
 import './assets/index.css'
 
 // Detect if running in Telegram environment
-const isTelegram = window.Telegram?.WebApp !== undefined
+const isTelegram = (window as any).Telegram?.WebApp !== undefined
 
 async function initApp() {
   if (isTelegram) {

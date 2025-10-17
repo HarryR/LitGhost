@@ -18,7 +18,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: undefined,
+        manualChunks: (id) => {
+          if( id.includes('@lit-protocol') ) {
+            return 'lit-protocol';
+          }
+        },
         inlineDynamicImports: false,
         // Inline tiny chunks like the Vue export helper
         experimentalMinChunkSize: 1000

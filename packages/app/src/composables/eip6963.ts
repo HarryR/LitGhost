@@ -3,6 +3,13 @@
 
 import { ref } from 'vue'
 
+// EIP-1193 Provider interface
+export interface EIP1193Provider {
+  request(args: { method: string; params?: any }): Promise<any>
+  on?(event: string, handler: (...args: any[]) => void): void
+  removeListener?(event: string, handler: (...args: any[]) => void): void
+}
+
 export interface EIP6963ProviderInfo {
   uuid: string
   name: string
@@ -12,7 +19,7 @@ export interface EIP6963ProviderInfo {
 
 export interface EIP6963ProviderDetail {
   info: EIP6963ProviderInfo
-  provider: any // EIP-1193 provider
+  provider: EIP1193Provider
 }
 
 export interface EIP6963AnnounceProviderEvent extends CustomEvent {
@@ -50,7 +57,7 @@ export function useEIP6963() {
     isListening = false
   }
 
-  function getProvider(rdns?: string): any {
+  function getProvider(rdns?: string): EIP1193Provider | null {
     if (rdns) {
       // Find provider by RDNS
       for (const [, detail] of providers.value) {

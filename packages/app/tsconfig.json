@@ -17,7 +17,9 @@
     /* Path aliases */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@monorepo/core": ["../core/src/index.ts"],
+      "@monorepo/lit-action/params": ["../lit-action/src/params.ts"]
     },
 
     /* Linting */
