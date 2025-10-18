@@ -76,9 +76,10 @@ export class GhostClient {
       this.#client = c;
     }
     return this.#client!;
-  }  
+  }
 
   async call(request:GhostRequest): Promise<GhostResponse> {
+    // TODO: check if #sessionSigs will expire soon, if so - re-generate them
     const client = await this.connect();
     const result = await client.executeJs({
       ipfsId: import.meta.env.VITE_GHOST_IPFSCID,

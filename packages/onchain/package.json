@@ -18,7 +18,7 @@
     "compile": "hardhat compile",
     "build": "hardhat compile",
     "test": "hardhat test",
-    "deploy:sepolia": "hardhat --network sepolia deploy"
+    "deploy:sepolia": "hardhat --network sepolia deploy --verify"
   },
   "dependencies": {
     "@monorepo/core": "workspace:*",

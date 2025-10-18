@@ -69,6 +69,8 @@ function litEcdsaSigToEthSig(sig: string): Sig {
 /**
  * Handle bootstrap request - generates entropy, encrypts it, and signs it
  * This initializes the system with a secret that only this Lit Action can decrypt
+ *
+ * IMPORTANT: This now calls setEntropy on-chain from within the TEE
  */
 async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse> {
   const currentCid = ctx.getCurrentIPFSCid();
@@ -96,6 +98,10 @@ async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext
   }
   ctx.setEntropy(decrypted, request.pkpEthAddress);
 
+  // Get the manager to extract teePublicKey
+  const manager = await ctx.getManager();
+  const teeEncPublicKey = hexlify(manager.teePublicKey);
+
   const dataHashBytes = arrayify('0x'+encryptResult.dataToEncryptHash);
   const ciphertextBytes = new TextEncoder().encode(encryptResult.ciphertext);
   const cidBytes = new TextEncoder().encode(currentCid);
@@ -105,6 +111,20 @@ async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext
     publicKey: request.pkpPublicKey,
     sigName: 'bootstrap-sig',
   }));
+
+  // Construct and sign the setEntropy transaction
+  const txHash = await sendSetEntropyTransaction(
+    ctx,
+    request.pkpPublicKey,
+    request.pkpEthAddress,
+    {
+      ciphertext: encryptResult.ciphertext,
+      digest: '0x' + encryptResult.dataToEncryptHash,
+      ipfsCid: currentCid,
+      sig: signature,
+      teeEncPublicKey: teeEncPublicKey,
+    }
+  );
 
   return {
     ok: true,
@@ -116,6 +136,71 @@ async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext
       encryptResult: encryptResult,
       signature: signature,
       currentCid,
+      teeEncPublicKey,
+      setEntropyTxHash: txHash,
     },
   }
+}
+
+/**
+ * Construct, sign, and broadcast setEntropy transaction from within the TEE
+ */
+async function sendSetEntropyTransaction(
+  ctx: GhostContext,
+  pkpPublicKey: string,
+  pkpEthAddress: string,
+  entropy: {
+    ciphertext: string;
+    digest: string;
+    ipfsCid: string;
+    sig: { v: number; r: string; s: string };
+    teeEncPublicKey: string;
+  }
+): Promise<string> {
+  // Get current nonce and gas price
+  const nonce = await ctx.provider.getTransactionCount(pkpEthAddress, 'pending');
+  const feeData = await ctx.provider.getFeeData();
+
+  // Encode the setEntropy call data using the contract's interface
+  const setEntropyData = ctx.ghost.interface.encodeFunctionData('setEntropy', [entropy]);
+
+  // Construct the transaction
+  const tx = {
+    to: ctx.ghost.address,
+    nonce,
+    gasLimit: hexlify(450000), // Same as bootstrap script
+    data: setEntropyData,
+    chainId: (await ctx.provider.getNetwork()).chainId,
+    // EIP-1559 transaction
+    maxFeePerGas: feeData.maxFeePerGas || undefined,
+    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || undefined,
+    type: 2,
+  };
+
+  // Serialize the transaction for signing (without signature)
+  const ethers = (globalThis as any).ethers;
+  const unsignedTx = ethers.utils.serializeTransaction(tx);
+  const txHash = keccak256(unsignedTx);
+
+  // Sign the transaction hash with the PKP
+  const signature = litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
+    toSign: arrayify(txHash),
+    publicKey: pkpPublicKey,
+    sigName: 'setEntropy-tx-sig',
+  }));
+
+  // Serialize the signed transaction
+  const signedTx = ethers.utils.serializeTransaction(tx, signature);
+
+  // Broadcast the transaction
+  const txResponse = await ctx.provider.sendTransaction(signedTx);
+
+  console.log('setEntropy transaction sent:', txResponse.hash);
+
+  // Wait for confirmation
+  await txResponse.wait();
+
+  console.log('setEntropy transaction confirmed!');
+
+  return txResponse.hash;
 }

@@ -424,8 +424,62 @@ async function main() {
     });
     console.log();
 
-    // Step 8: Execute the bootstrap Lit Action
-    console.log('Step 8: Execute bootstrap Lit Action');
+    // Step 8: Fund PKP address for setEntropy transaction
+    console.log('Step 8: Fund PKP address for setEntropy transaction');
+
+    // Get chain and contract address from env
+    const chainName = process.env.VITE_CHAIN;
+    const litGhostAddress = process.env.VITE_CONTRACT_LITGHOST;
+
+    if (!chainName || !litGhostAddress) {
+      throw new Error('VITE_CHAIN and VITE_CONTRACT_LITGHOST must be set in .env.' + bootstrapConfig.mode);
+    }
+
+    // Construct RPC URL for the target chain
+    const targetRpcUrl = `https://1rpc.io/${chainName}`;
+    console.log('  Target Chain:', chainName);
+    console.log('  Target RPC URL:', targetRpcUrl);
+    console.log('  LitGhost Address:', litGhostAddress);
+
+    // Get deployer wallet
+    let deployerPrivateKey = bootstrapConfig.privateKey || process.env[bootstrapConfig.privateKeyEnvVar];
+    if (!deployerPrivateKey) {
+      throw new Error('No private key provided (use --private-key or set ' + bootstrapConfig.privateKeyEnvVar + ')');
+    }
+
+    // Create provider and wallet for target chain
+    const targetProvider = new ethers.providers.JsonRpcProvider(targetRpcUrl);
+    const deployerWallet = new ethers.Wallet(deployerPrivateKey, targetProvider);
+    console.log('  Deployer Address:', deployerWallet.address);
+
+    // Estimate gas cost for setEntropy call (450k gas limit)
+    const estimatedGasUnits = 450000;
+    const feeData = await targetProvider.getFeeData();
+    const maxFeePerGas = feeData.maxFeePerGas || ethers.BigNumber.from('50000000000'); // 50 gwei fallback
+    const estimatedCost = ethers.BigNumber.from(estimatedGasUnits).mul(maxFeePerGas);
+
+    // Add 50% buffer for safety
+    const fundingAmount = estimatedCost.mul(150).div(100);
+
+    console.log('  Estimated gas cost:', ethers.utils.formatEther(estimatedCost), 'ETH');
+    console.log('  Funding amount (with 50% buffer):', ethers.utils.formatEther(fundingAmount), 'ETH');
+
+    // Send funds to PKP address
+    console.log('  Sending funds to PKP address:', pkp.ethAddress);
+    const fundingTx = await deployerWallet.sendTransaction({
+      to: pkp.ethAddress,
+      value: fundingAmount,
+    });
+    console.log('  Funding transaction hash:', fundingTx.hash);
+    await fundingTx.wait();
+    console.log('  ✓ PKP funded successfully');
+
+    const pkpBalance = await targetProvider.getBalance(pkp.ethAddress);
+    console.log('  PKP balance:', ethers.utils.formatEther(pkpBalance), 'ETH');
+    console.log();
+
+    // Step 9: Execute the bootstrap Lit Action
+    console.log('Step 9: Execute bootstrap Lit Action');
 
     const result = await litClient.executeJs({
       code: litActionCode,
@@ -465,6 +519,8 @@ async function main() {
     console.log('            Data hash:', data.dataToEncryptHash);
     console.log('            Signature:', data.signature);
     console.log('       Access Control:', data.accessControlConditions);
+    console.log('   TEE Enc Public Key:', data.teeEncPublicKey);
+    console.log('  setEntropy Tx Hash:', data.setEntropyTxHash);
     console.log();
 
     // Verify signature
@@ -520,113 +576,40 @@ async function main() {
     console.log('='.repeat(80));
     console.log();
 
-    // Step 9: Store entropy on LitGhost contract
-    console.log('Step 9: Store entropy on LitGhost contract');
+    // Step 10: Write output to JSON file
+    console.log('Step 10: Write bootstrap data to file');
+    const outputData = {
+      network: bootstrapConfig.network,
+      mode: bootstrapConfig.mode,
+      timestamp: new Date().toISOString(),
+      pkp: {
+        tokenId: pkp.tokenId,
+        publicKey: pkp.publicKey,
+        ethAddress: pkp.ethAddress,
+      },
+      litAction: {
+        ipfsCid,
+        path: litActionPath,
+        size: litActionCode.length,
+      },
+      encryptedData: {
+        ciphertext: data.ciphertext,
+        dataHash: data.dataToEncryptHash,
+        signature: data.signature,
+        accessControlConditions: data.accessControlConditions,
+        teeEncPublicKey: data.teeEncPublicKey,
+      },
+      onchain: {
+        chain: chainName,
+        rpcUrl: targetRpcUrl,
+        litGhostAddress,
+        setEntropyTxHash: data.setEntropyTxHash,
+      },
+    };
 
-    // Get chain and contract address from env
-    const chainName = process.env.VITE_CHAIN;
-    const litGhostAddress = process.env.VITE_CONTRACT_LITGHOST;
-
-    if (!chainName || !litGhostAddress) {
-      console.log('  ⚠️  Skipping on-chain storage: VITE_CHAIN or VITE_CONTRACT_LITGHOST not set in .env.' + bootstrapConfig.mode);
-      console.log();
-    } else {
-      // Construct RPC URL
-      const rpcUrl = `https://1rpc.io/${chainName}`;
-      console.log('  Chain:', chainName);
-      console.log('  RPC URL:', rpcUrl);
-      console.log('  LitGhost Address:', litGhostAddress);
-
-      // Get deployer wallet
-      let deployerPrivateKey = bootstrapConfig.privateKey || process.env[bootstrapConfig.privateKeyEnvVar];
-      if (!deployerPrivateKey) {
-        console.log('  ⚠️  Skipping on-chain storage: No private key provided (use --private-key or set ' + bootstrapConfig.privateKeyEnvVar + ')');
-        console.log();
-      } else {
-        try {
-          // Create provider and wallet
-          const chainProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
-          const deployerWallet = new ethers.Wallet(deployerPrivateKey, chainProvider);
-          console.log('  Deployer Address:', deployerWallet.address);
-
-          // Connect LitGhost contract
-          const litGhostContract = LitGhost.connect(deployerWallet).attach(litGhostAddress);
-
-          // The signature from signAndCombineEcdsa uses SECG compressed point format
-          // r comes as 03/02 (compression byte) + 32 bytes (x coordinate, which is the actual r value)
-          // v is the parity bit (0 or 1)
-          // s is the standard s value
-          const sig = data.signature;
-          console.log('  Signature from Lit:', JSON.stringify(sig));
-
-          // Convert ciphertext ASCII string to bytes using TextEncoder
-          // The ciphertext is an ASCII string (implementation detail: currently base64)
-          // We encode it as bytes for the contract
-          //const ciphertextBytes = new TextEncoder().encode(data.ciphertext);
-          //const ciphertextHex = ethers.utils.hexlify(ciphertextBytes);
-
-          // Call setEntropy with individual parameters (avoids struct encoding issues)
-          // Manual gas limit needed because estimation fails for SSTORE operations
-          // The ciphertext storage alone needs ~20k per 32 bytes, plus struct overhead
-          console.log('  Calling setEntropy...');
-          const tx = await litGhostContract.setEntropy({
-            ciphertext: data.ciphertext,
-            digest: '0x' + data.dataToEncryptHash,
-            ipfsCid,
-            sig,
-            }, { gasLimit: 450000 } // XXX: gas estimation fails?
-          );
-          console.log('  Transaction hash:', tx.hash);
-
-          const receipt = await tx.wait();
-          console.log('  ✓ Transaction confirmed in block:', receipt.blockNumber);
-          console.log('  Gas used:', receipt.gasUsed.toString());
-          console.log();
-
-          // Step 9: Write output to JSON file
-          console.log('Write bootstrap data to file');
-          const outputData = {
-            network: bootstrapConfig.network,
-            mode: bootstrapConfig.mode,
-            timestamp: new Date().toISOString(),
-            pkp: {
-              tokenId: pkp.tokenId,
-              publicKey: pkp.publicKey,
-              ethAddress: pkp.ethAddress,
-            },
-            litAction: {
-              ipfsCid,
-              path: litActionPath,
-              size: litActionCode.length,
-            },
-            encryptedData: {
-              ciphertext: data.ciphertext,
-              dataHash: data.dataToEncryptHash,
-              signature: data.signature,
-              accessControlConditions: data.accessControlConditions,
-            },
-            onchain: {
-              chain: chainName,
-              rpcUrl,
-              litGhostAddress,
-              setEntropyTx: {
-                hash: tx.hash,
-                blockNumber: receipt.blockNumber,
-                gasUsed: receipt.gasUsed.toString(),
-              },
-            },
-          };
-
-          fs.writeFileSync(bootstrapConfig.outputFile, JSON.stringify(outputData, null, 2), 'utf8');
-          console.log('  ✓ Bootstrap data written to:', bootstrapConfig.outputFile);
-          console.log();
-        } catch (error: any) {
-          console.log('  ❌ Error storing entropy on-chain:', error.message);
-          console.log('  Bootstrap failed - entropy must be stored on-chain to complete bootstrap');
-          throw error;
-        }
-      }
-    }
+    fs.writeFileSync(bootstrapConfig.outputFile, JSON.stringify(outputData, null, 2), 'utf8');
+    console.log('  ✓ Bootstrap data written to:', bootstrapConfig.outputFile);
+    console.log();
 
   }
   finally {

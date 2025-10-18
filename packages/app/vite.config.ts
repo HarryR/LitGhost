@@ -22,6 +22,9 @@ export default defineConfig({
           if( id.includes('@lit-protocol') ) {
             return 'lit-protocol';
           }
+          if( id.includes('@ethersproject') ) {
+            return 'ethers';
+          }
         },
         inlineDynamicImports: false,
         // Inline tiny chunks like the Vue export helper
