@@ -17,6 +17,63 @@ export interface GhostResponseError {
 
 export type GhostResponse<T = any> = GhostResponseSuccess<T> | GhostResponseError;
 
+// ============================================================================
+// Response Data Types (per handler)
+// ============================================================================
+
+/**
+ * Response data for echo handler
+ */
+export interface EchoResponseData {
+  echo: string;
+  timestamp: number;
+}
+
+/**
+ * Response data for bootstrap handler
+ */
+export interface BootstrapResponseData {
+  pkp: string;
+  accessControlConditions: any[];
+  dataToEncryptHash: string;
+  ciphertext: string;
+  encryptResult: any;
+  signature: {
+    v: number;
+    r: string;
+    s: string;
+  };
+  currentCid: string;
+  teeEncPublicKey: string;
+  setEntropyTxHash: string;
+}
+
+/**
+ * Response data for register-telegram handler
+ */
+export interface RegisterTelegramResponseData {
+  telegram: {
+    username: string;
+    privateKey: string;
+  };
+}
+
+// ============================================================================
+// Type map linking request types to their response data types
+// ============================================================================
+
+export interface GhostResponseDataMap {
+  'echo': EchoResponseData;
+  'bootstrap': BootstrapResponseData;
+  'register-telegram': RegisterTelegramResponseData;
+}
+
+/**
+ * Helper type to get the response type for a specific request type
+ */
+export type GhostResponseForRequest<T extends GhostRequest> =
+  GhostResponse<GhostResponseDataMap[T['type']]>;
+
 /**
  * Parameters passed to the Lit Action via jsParams
  *

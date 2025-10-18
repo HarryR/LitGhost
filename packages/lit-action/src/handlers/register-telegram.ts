@@ -1,8 +1,8 @@
-import { GhostRequestRegisterTelegram, GhostResponse } from '../params';
+import { GhostRequestRegisterTelegram, GhostResponse, RegisterTelegramResponseData } from '../params';
 import { type GhostContext } from '../context';
 import { tgValidateInitData } from '@monorepo/core/sandboxed';
 
-export async function handleRegisterTelegram(request: GhostRequestRegisterTelegram, ctx: GhostContext): Promise<GhostResponse> {
+export async function handleRegisterTelegram(request: GhostRequestRegisterTelegram, ctx: GhostContext): Promise<GhostResponse<RegisterTelegramResponseData>> {
     const isValid = await tgValidateInitData(request.initDataRaw, ctx.tgBotId, ctx.tgPubKey);
     if( ! isValid ) {
         throw new Error("TG Auth Data Not Valid!");
@@ -27,7 +27,10 @@ export async function handleRegisterTelegram(request: GhostRequestRegisterTelegr
     return {
         ok: true,
         data: {
-            privateKey: userKey.privateKey
+            telegram: {
+                username: username,
+                privateKey: userKey.privateKey
+            }
         }
     }
 }

@@ -3,7 +3,28 @@ import { LIT_NETWORK_VALUES, LIT_ABILITY } from '@lit-protocol/constants';
 import { LitActionResource, createSiweMessage, generateAuthSig } from '@lit-protocol/auth-helpers';
 import { Wallet } from 'ethers';
 import { SessionSigsMap } from '@lit-protocol/types';
-import { GhostRequest, GhostResponse } from '@monorepo/lit-action/params';
+import {
+  GhostRequest,
+  GhostResponse,
+  GhostResponseDataMap,
+} from '@monorepo/lit-action/params';
+
+/**
+ * Custom error type for Ghost client failures
+ */
+export class GhostClientError extends Error {
+  constructor(
+    message: string,
+    public readonly details?: any
+  ) {
+    super(message);
+    this.name = 'GhostClientError';
+    // Maintains proper stack trace for where our error was thrown (only available on V8)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, GhostClientError);
+    }
+  }
+}
 
 async function getSessionSigsForAction(
   litNodeClient: LitNodeClient,
@@ -78,7 +99,7 @@ export class GhostClient {
     return this.#client!;
   }
 
-  async call(request:GhostRequest): Promise<GhostResponse> {
+  async call<T extends GhostRequest>(request: T): Promise<GhostResponseDataMap[T['type']]> {
     // TODO: check if #sessionSigs will expire soon, if so - re-generate them
     const client = await this.connect();
     const result = await client.executeJs({
@@ -88,12 +109,39 @@ export class GhostClient {
         ghostRequest: request
       },
     });
-    let response;
-    if (typeof result.response === 'string') {
-      response = JSON.parse(result.response);
-    } else {
-      response = result.response;
+    const response: GhostResponse = typeof result.response === 'string'
+      ? JSON.parse(result.response)
+      : result.response as GhostResponse;
+
+    // Handle errors by throwing
+    if (!response.ok) {
+      throw new GhostClientError(response.error, response.details);
     }
-    return response as GhostResponse;
+
+    return response.data as GhostResponseDataMap[T['type']];
+  }
+
+  // Strongly-typed convenience methods for each request type
+
+  async echo(message: string) {
+    return this.call({
+      type: 'echo',
+      message,
+    });
+  }
+
+  async bootstrap(pkpPublicKey: string, pkpEthAddress: string) {
+    return this.call({
+      type: 'bootstrap',
+      pkpPublicKey,
+      pkpEthAddress,
+    });
+  }
+
+  async registerTelegram(initDataRaw: string) {
+    return this.call({
+      type: 'register-telegram',
+      initDataRaw,
+    });
   }
 }

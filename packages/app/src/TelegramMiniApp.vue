@@ -13,7 +13,7 @@ function hasTgUsername() {
   return typeof user.username === 'string';
 }
 
-// TODO: if there is no TG username, display a sad message to the user
+// TODO: if there is no TG username, display a sad message to the user telling them to get a username!
 </script>
 
 <template>
@@ -22,7 +22,6 @@ function hasTgUsername() {
     <button @click="count++">Count is: {{ count }}</button>
     {{ initData.raw() }}
     <br />
-    
   </div>
 </template>
 

@@ -1,4 +1,4 @@
-import { GhostRequestBootstrap, GhostResponse } from '../params';
+import { GhostRequestBootstrap, GhostResponse, BootstrapResponseData } from '../params';
 import { type GhostContext, EntropySig, Entropy } from '../context';
 
 import { randomBytes, arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
@@ -18,7 +18,7 @@ function litEcdsaSigToEthSig(sig: string): EntropySig {
  *
  * IMPORTANT: This now calls setEntropy on-chain from within the TEE
  */
-export async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse> {
+export async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse<BootstrapResponseData>> {
   const currentCid = ctx.getCurrentIPFSCid();
   const accessControlConditions = ctx.litCidAccessControl(currentCid);
 
