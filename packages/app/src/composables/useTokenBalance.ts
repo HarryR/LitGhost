@@ -1,6 +1,9 @@
 import { ref, watch, onUnmounted } from 'vue'
-import { ethers } from 'ethers'
 import type { Ref } from 'vue'
+
+import { Contract } from '@ethersproject/contracts';
+import { formatUnits } from '@ethersproject/units';
+import { Web3Provider } from '@ethersproject/providers';
 
 // ERC20 ABI - just the functions we need
 const ERC20_ABI = [
@@ -10,7 +13,7 @@ const ERC20_ABI = [
 ]
 
 interface UseTokenBalanceOptions {
-  provider: Ref<ethers.providers.Web3Provider | null>
+  provider: Ref<Web3Provider | null>
   address: Ref<string | null>
   tokenAddress: string
   pollInterval?: number // in milliseconds
@@ -26,7 +29,7 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
   const error = ref<string | null>(null)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
-  let contract: ethers.Contract | null = null
+  let contract: Contract | null = null
 
   async function fetchTokenInfo() {
     if (!provider.value) return
@@ -34,7 +37,7 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     try {
       // Create contract instance
       if (!contract || contract.provider !== provider.value) {
-        contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider.value)
+        contract = new Contract(tokenAddress, ERC20_ABI, provider.value)
       }
 
       // Fetch decimals and symbol (these don't change)
@@ -77,13 +80,13 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     try {
       // Create contract instance if needed
       if (!contract || contract.provider !== provider.value) {
-        contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider.value)
+        contract = new Contract(tokenAddress, ERC20_ABI, provider.value)
       }
 
       const rawBalance = await contract.balanceOf(address.value)
 
       // Format balance with proper decimals
-      balance.value = ethers.utils.formatUnits(rawBalance, decimals.value)
+      balance.value = formatUnits(rawBalance, decimals.value)
     } catch (err: any) {
       console.error('Failed to fetch token balance:', err)
       error.value = err.message || 'Failed to fetch balance'

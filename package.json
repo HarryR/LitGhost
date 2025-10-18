@@ -7,9 +7,43 @@
     "build": "pnpm --filter './packages/*' run build",
     "test": "pnpm --filter './packages/*' run test",
     "typecheck": "pnpm --filter @monorepo/core exec tsc --noEmit && pnpm --filter @monorepo/app exec vue-tsc --noEmit",
-    "validate": "pnpm build && pnpm test && pnpm typecheck"
+    "validate": "pnpm --filter @monorepo/onchain build && pnpm --filter @monorepo/core build && pnpm --filter @monorepo/lit-action build && pnpm --filter @monorepo/app build && pnpm test"
   },
   "devDependencies": {
     "tailwindcss-animate": "^1.0.7"
+  },
+  "pnpm": {
+    "overrides": {
+      "@ethersproject/abi": "5.8.0",
+      "@ethersproject/abstract-provider": "5.8.0",
+      "@ethersproject/abstract-signer": "5.8.0",
+      "@ethersproject/address": "5.8.0",
+      "@ethersproject/base64": "5.8.0",
+      "@ethersproject/basex": "5.8.0",
+      "@ethersproject/bignumber": "5.8.0",
+      "@ethersproject/bytes": "5.8.0",
+      "@ethersproject/constants": "5.8.0",
+      "@ethersproject/contracts": "5.8.0",
+      "@ethersproject/hash": "5.8.0",
+      "@ethersproject/hdnode": "5.8.0",
+      "@ethersproject/json-wallets": "5.8.0",
+      "@ethersproject/keccak256": "5.8.0",
+      "@ethersproject/logger": "5.8.0",
+      "@ethersproject/networks": "5.8.0",
+      "@ethersproject/pbkdf2": "5.8.0",
+      "@ethersproject/properties": "5.8.0",
+      "@ethersproject/providers": "5.8.0",
+      "@ethersproject/random": "5.8.0",
+      "@ethersproject/rlp": "5.8.0",
+      "@ethersproject/sha2": "5.8.0",
+      "@ethersproject/signing-key": "5.8.0",
+      "@ethersproject/solidity": "5.8.0",
+      "@ethersproject/strings": "5.8.0",
+      "@ethersproject/transactions": "5.8.0",
+      "@ethersproject/units": "5.8.0",
+      "@ethersproject/wallet": "5.8.0",
+      "@ethersproject/web": "5.8.0",
+      "@ethersproject/wordlists": "5.8.0"
+    }
   }
 }

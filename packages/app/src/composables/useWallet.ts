@@ -1,14 +1,15 @@
 import { ref, onUnmounted, shallowRef } from 'vue'
-import { ethers } from 'ethers'
 import { useEIP6963, type EIP1193Provider } from './eip6963'
+import { Web3Provider } from '@ethersproject/providers';
+import { Signer } from '@ethersproject/abstract-signer';
 
 // State
 const address = ref<string | null>(null)
 const chainId = ref<number | null>(null)
 const connected = ref(false)
 const connecting = ref(false)
-const provider = shallowRef<ethers.providers.Web3Provider | null>(null)
-const signer = shallowRef<ethers.Signer | null>(null)
+const provider = shallowRef<Web3Provider | null>(null)
+const signer = shallowRef<Signer | null>(null)
 const rawProvider = shallowRef<EIP1193Provider | null>(null)
 
 let currentProvider: EIP1193Provider | null = null
@@ -50,7 +51,7 @@ function handleChainChanged(chainIdHex: string) {
 
   // Recreate provider and signer with new chain
   if (currentProvider) {
-    provider.value = new ethers.providers.Web3Provider(currentProvider, 'any')
+    provider.value = new Web3Provider(currentProvider, 'any')
     signer.value = provider.value.getSigner()
   }
 }
@@ -103,7 +104,7 @@ export function useWallet() {
       currentProvider = walletProvider
 
       // Create ethers provider and signer
-      const ethersProvider = new ethers.providers.Web3Provider(walletProvider, 'any')
+      const ethersProvider = new Web3Provider(walletProvider, 'any')
 
       // Update state
       address.value = accounts[0]

@@ -8,9 +8,8 @@ import { detectTg } from './detectTg';
 async function initApp() {
   if (detectTg()) {
     // Initialize Telegram SDK only when in Telegram
-    const { init, initData } = await import('@telegram-apps/sdk-vue')
-    init()
-    initData.restore()
+    await import('./vendor/telegram-web-app.js')
+    window.Telegram.WebApp.ready()
 
     const { default: TelegramMiniApp } = await import('./TelegramMiniApp.vue')
     createApp(TelegramMiniApp).mount('#app')

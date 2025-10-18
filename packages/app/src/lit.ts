@@ -1,13 +1,14 @@
 import { LitNodeClient } from '@lit-protocol/lit-node-client';
 import { LIT_NETWORK_VALUES, LIT_ABILITY } from '@lit-protocol/constants';
 import { LitActionResource, createSiweMessage, generateAuthSig } from '@lit-protocol/auth-helpers';
-import { Wallet } from 'ethers';
 import { SessionSigsMap } from '@lit-protocol/types';
 import {
   GhostRequest,
   GhostResponse,
   GhostResponseDataMap,
 } from '@monorepo/lit-action/params';
+
+import { Wallet } from '@ethersproject/wallet';
 
 /**
  * Custom error type for Ghost client failures
