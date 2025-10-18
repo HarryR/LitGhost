@@ -10,17 +10,18 @@
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
 import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext } from '@monorepo/core/sandboxed';
 
-interface EntropySig {
+export interface EntropySig {
   v: number;
   r: string;
   s: string;
 }
 
-interface Entropy {
+export interface Entropy {
   ciphertext: string;
   digest: string;
   ipfsCid: string;
   sig: EntropySig;
+  teeEncPublicKey: string;
 }
 
 export class GhostContext {
@@ -32,6 +33,9 @@ export class GhostContext {
 
   /** MockToken contract instance */
   public readonly token: Contract;
+
+  public readonly tgBotId;
+  public readonly tgPubKey;
 
   #entropy: Uint8Array|null;
 
@@ -45,9 +49,14 @@ export class GhostContext {
   constructor(
     rpcUrl: string,
     ghostAddress: string,
-    tokenAddress: string
+    tokenAddress: string,
+    tgBotId: string,
+    tgPubKey: string
   ) {
     this.#entropy = null;
+
+    this.tgBotId = tgBotId;
+    this.tgPubKey = tgPubKey;
 
     this.provider = new JsonRpcProvider(rpcUrl);
     this.ghost = LitGhost.connect(this.provider).attach(ghostAddress);
@@ -126,12 +135,16 @@ export class GhostContext {
     VITE_CHAIN: string;
     VITE_CONTRACT_LITGHOST: string;
     VITE_CONTRACT_TOKEN: string;
+    VITE_TELEGRAM_BOT_ID: string;
+    VITE_TELEGRAM_PUBLIC_KEY: string;
   }): Promise<GhostContext> {
     const rpcUrl = await Lit.Actions.getRpcUrl({ chain: env.VITE_CHAIN });
     return new GhostContext(
       rpcUrl,
       env.VITE_CONTRACT_LITGHOST,
-      env.VITE_CONTRACT_TOKEN
+      env.VITE_CONTRACT_TOKEN,
+      env.VITE_TELEGRAM_BOT_ID,
+      env.VITE_TELEGRAM_PUBLIC_KEY
     );
   }
 }

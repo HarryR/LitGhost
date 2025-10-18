@@ -12,7 +12,7 @@
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
 import { getParams } from './params';
-import { handleRequest } from './handler';
+import { handleRequest } from './handlers';
 import { GhostContext } from './context';
 
 /**
@@ -27,6 +27,8 @@ declare const ENV: {
   VITE_CHAIN: string;
   VITE_CONTRACT_LITGHOST: string;
   VITE_CONTRACT_TOKEN: string;
+  VITE_TELEGRAM_BOT_ID: string;
+  VITE_TELEGRAM_PUBLIC_KEY: string;
   // Add more VITE_* env vars here as needed
 };
 

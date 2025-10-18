@@ -36,6 +36,8 @@ export {
   deriveUserKeypair,
   reconstructCompressedPublicKey,
   namespacedHmac,
+  base64UrlToBytes,
+  hexToBytes
 } from './utils';
 
 export {
@@ -69,3 +71,5 @@ export {
   type BalanceUpdate,
   type WatchBalanceOptions
 } from './user';
+
+export { tgValidateAuthDate, tgValidateInitData } from './tgInitData';

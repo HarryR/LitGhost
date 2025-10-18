@@ -3,12 +3,10 @@ window.global ||= window;
 
 import { createApp } from 'vue'
 import './assets/index.css'
-
-// Detect if running in Telegram environment
-const isTelegram = (window as any).Telegram?.WebApp !== undefined
+import { detectTg } from './detectTg';
 
 async function initApp() {
-  if (isTelegram) {
+  if (detectTg()) {
     // Initialize Telegram SDK only when in Telegram
     const { init, initData } = await import('@telegram-apps/sdk-vue')
     init()

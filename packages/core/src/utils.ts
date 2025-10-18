@@ -153,3 +153,23 @@ export function namespacedHmac(secret:Uint8Array, namespace: string, data:Uint8A
  const k = createNamespacedKey(secret, `(${namespace}) HMAC SHA256`);
  return arrayify(computeHmac(SupportedAlgorithm.sha256, k, data)) 
 }
+
+export function base64UrlToBytes(base64url: string): Uint8Array {
+  const base64 = base64url
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+  const binaryString = atob(base64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+export function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+  }
+  return bytes
+}

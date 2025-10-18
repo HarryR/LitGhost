@@ -1,64 +1,10 @@
-/**
- * Main request handler for Lit Action
- * Pattern matches on ghostRequest type and executes appropriate logic
- */
+import { GhostRequestBootstrap, GhostResponse } from '../params';
+import { type GhostContext, EntropySig, Entropy } from '../context';
 
-import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { type JsParams, GhostRequestEcho, GhostRequestBootstrap, GhostResponse } from './params';
-import type { GhostContext } from './context';
 import { randomBytes, arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
-/**
- * Main request handler
- * Takes validated jsParams and context, returns a response
- * Does NOT call Lit.Actions.setResponse - that's done in main()
- *
- * @param jsParams - Validated parameters passed to the Lit Action
- * @param _ctx - Runtime context with provider and contract instances (unused for now)
- */
-export async function handleRequest(
-  {ghostRequest}: JsParams,
-  ctx: GhostContext
-): Promise<GhostResponse> {
-  try {
-    switch( ghostRequest.type ) {
-      case 'echo': return handleEcho(ghostRequest as GhostRequestEcho);
-      case 'bootstrap': return await handleBootstrap(ghostRequest as GhostRequestBootstrap, ctx);
-      default: return { ok: false, error: `Unknown request type: ${(ghostRequest as any).type}` };
-    }
-  } catch (error) {
-    console.error('Error in handleRequest:', error);
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-  }
-}
 
-// ============================================================================
-// Individual Request Handlers
-// ============================================================================
-
-/**
- * Handle echo request - simple test that returns the message
- */
-function handleEcho(request: GhostRequestEcho): GhostResponse {
-  return {
-    ok: true,
-    data: {
-      echo: request.message,
-      timestamp: Date.now(),
-    },
-  };
-}
-
-interface Sig {
-  v: number;
-  r: string;
-  s: string;
-}
-
-function litEcdsaSigToEthSig(sig: string): Sig {
-  const sigObj = JSON.parse(sig) as Sig;
+function litEcdsaSigToEthSig(sig: string): EntropySig {
+  const sigObj = JSON.parse(sig) as EntropySig;
   return {
     v: sigObj.v + 27,
     r: '0x' + sigObj.r.slice(2),  // Lit returns SECG prefixed compressed public key! So 0x02 or 0x03 prefix,
@@ -72,7 +18,7 @@ function litEcdsaSigToEthSig(sig: string): Sig {
  *
  * IMPORTANT: This now calls setEntropy on-chain from within the TEE
  */
-async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse> {
+export async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse> {
   const currentCid = ctx.getCurrentIPFSCid();
   const accessControlConditions = ctx.litCidAccessControl(currentCid);
 
@@ -149,13 +95,7 @@ async function sendSetEntropyTransaction(
   ctx: GhostContext,
   pkpPublicKey: string,
   pkpEthAddress: string,
-  entropy: {
-    ciphertext: string;
-    digest: string;
-    ipfsCid: string;
-    sig: { v: number; r: string; s: string };
-    teeEncPublicKey: string;
-  }
+  entropy: Entropy
 ): Promise<string> {
   // Get current nonce and gas price
   const nonce = await ctx.provider.getTransactionCount(pkpEthAddress, 'pending');

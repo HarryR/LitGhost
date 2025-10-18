@@ -36,6 +36,11 @@ export interface GhostRequestEcho {
   message: string;
 }
 
+export interface GhostRequestRegisterTelegram {
+  type: 'register-telegram';
+  initDataRaw: string;
+}
+
 /**
  * Bootstrap request - generates entropy, encrypts it, and signs it
  * This initializes the system with a secret that only this Lit Action can decrypt
@@ -50,7 +55,7 @@ export interface GhostRequestBootstrap {
  * Discriminated union of all possible ghost request types
  * Add new request types here as you build functionality
  */
-export type GhostRequest = GhostRequestEcho | GhostRequestBootstrap;
+export type GhostRequest = GhostRequestEcho | GhostRequestBootstrap | GhostRequestRegisterTelegram;
 
 // ============================================================================
 // Request Type Validators

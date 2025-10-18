@@ -39,7 +39,8 @@ export default defineConfig(({ mode }) => {
           '@ethersproject/contracts',
           '@ethersproject/providers',
           '@ethersproject/strings',
-          '@ethersproject/wallet'
+          '@ethersproject/wallet',
+          "@noble/ed25519"
         ],
         output: {
           inlineDynamicImports: true,
