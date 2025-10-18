@@ -68,7 +68,7 @@ export function blindUserId(
   }
 
   // Encode telegram ID to ASCII bytes (usernames are ASCII-only)
-  const encoded = Buffer.from(telegramId, 'ascii');
+  const encoded = new TextEncoder().encode(telegramId);
 
   // Zero-pad to 32 bytes (right-padded with zeros)
   const usernameBytes = new Uint8Array(32);
@@ -99,7 +99,7 @@ export function unblindUserId(
   }
 
   // Decode only the non-padded portion as ASCII
-  const username = Buffer.from(usernameBytes.subarray(0, length)).toString('ascii');
+  const username = new TextDecoder('ascii').decode(usernameBytes.subarray(0, length));
 
   // Verify result is valid Telegram username format (defensive check)
   if (!isValidTelegramUsername(username)) {

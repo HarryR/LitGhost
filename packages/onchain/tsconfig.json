@@ -14,7 +14,7 @@
     "outDir": "lib/esm",
     "baseUrl": ".",
     "paths": {
-      "@monorepo/core": ["../core/dist/index.d.ts"]
+      "@monorepo/core": ["../core/src/index.ts"]
     }
   },
   "ignoreDeprecations": "6.0"

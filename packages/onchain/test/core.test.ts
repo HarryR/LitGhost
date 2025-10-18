@@ -9,15 +9,16 @@ import { Contract } from "@ethersproject/contracts";
 
 import {
   LitGhost as coreLitGhost,
-  Token as coreToken,
   ManagerContext,
   UserClient,
   createDepositTo,
   randomKeypair,
   deriveUserKeypair,
   type InternalTransaction,
-  type BalanceUpdate
+  type BalanceUpdate,
+  arrayify
 } from '@monorepo/core';
+import { randomBytes } from "crypto";
 
 /**
  * Integration test suite for Manager and User utilities
@@ -43,9 +44,8 @@ describe("Manager and User Integration (ethers v5)", function () {
   let v5lg: Contract;
 
   // Manager keys
-  let teePrivateKey: Uint8Array;
-  let teePublicKey: Uint8Array;
-  let userMasterKey: Uint8Array;
+  //let teePrivateKey: Uint8Array;
+  //let teePublicKey: Uint8Array;
   let manager: ManagerContext;
 
   const TOKEN_DECIMALS = 6;
@@ -56,12 +56,9 @@ describe("Manager and User Integration (ethers v5)", function () {
     [owner, user1, user2, user3] = await ethers.getSigners();
 
     // Generate manager keys
-    const teeKeypair = randomKeypair();
-    teePrivateKey = teeKeypair.privateKey;
-    teePublicKey = teeKeypair.publicKey;
-
-    userMasterKey = new Uint8Array(32);
-    crypto.getRandomValues(userMasterKey);
+    //const teeKeypair = randomKeypair();
+    //teePrivateKey = teeKeypair.privateKey;
+    //teePublicKey = teeKeypair.publicKey;
 
     // Deploy contracts using ethers v6
     const MockTokenFactory = await ethers.getContractFactory("MockToken");
@@ -90,7 +87,8 @@ describe("Manager and User Integration (ethers v5)", function () {
     v5lg = coreLitGhost.connect(v5Owner).attach(lgAddress);
 
     // Create manager context
-    manager = new ManagerContext(teePrivateKey, userMasterKey, v5lg);
+    const teeMasterSecret = randomBytes(32);
+    manager = new ManagerContext(teeMasterSecret, v5lg);
   });
 
   describe("Manager Utilities", function () {
@@ -98,7 +96,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       const depositAmount = ethers.parseUnits("100", TOKEN_DECIMALS);
 
       // User alice makes a deposit
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -116,21 +114,19 @@ describe("Manager and User Integration (ethers v5)", function () {
     });
 
     it("Should compute user public keys correctly", async function () {
-      const userPublicKey = manager.getUserPublicKey("alice");
-      expect(userPublicKey).to.be.instanceOf(Uint8Array);
-      expect(userPublicKey.length).to.equal(32);
+      const userPublicKey = manager.getUserKeypair("alice");
 
       // Same username should produce same public key (deterministic)
-      const userPublicKey2 = manager.getUserPublicKey("alice");
-      expect(Buffer.from(userPublicKey)).to.deep.equal(Buffer.from(userPublicKey2));
+      const userPublicKey2 = manager.getUserKeypair("alice");
+      expect(userPublicKey.publicKey).to.equal(userPublicKey2.publicKey);
     });
 
     it("Should derive user keypairs deterministically", async function () {
-      const kp1 = deriveUserKeypair("alice", userMasterKey);
-      const kp2 = deriveUserKeypair("alice", userMasterKey);
-
-      expect(Buffer.from(kp1.privateKey)).to.deep.equal(Buffer.from(kp2.privateKey));
-      expect(Buffer.from(kp1.publicKey)).to.deep.equal(Buffer.from(kp2.publicKey));
+      const x = randomKeypair();
+      const kp1 = deriveUserKeypair("alice", x.privateKey, "test");
+      const kp2 = deriveUserKeypair("alice", x.privateKey, "test");
+      expect(kp1.privateKey).to.equal(kp2.privateKey);
+      expect(kp1.publicKey).to.equal(kp2.publicKey);
     });
   });
 
@@ -143,7 +139,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       const usernames = ["alice", "bob", "charlie"];
       for (const username of usernames) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -212,7 +208,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockBeforeDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       for (const username of ["alice", "bob"]) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -286,7 +282,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Alice deposits
       const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -361,7 +357,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       const usernames = ["dave", "eve", "frank"];
       for (const username of usernames) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -419,7 +415,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       const usernames = ["user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8"];
       for (const username of usernames) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -510,7 +506,7 @@ describe("Manager and User Integration (ethers v5)", function () {
 
       const usernames = Array.from({ length: 50 }, (_, i) => `user${i}`);
       for (const username of usernames) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -570,7 +566,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Alice deposits
       const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -602,12 +598,12 @@ describe("Manager and User Integration (ethers v5)", function () {
       );
 
       // User client setup
-      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const userKeypair = manager.getUserKeypair("alice");
 
       const userClient = new UserClient(
-        userKeypair.privateKey,
-        userKeypair.publicKey,  // Public key is now what's stored on-chain
-        teePublicKey,
+        arrayify(userKeypair.privateKey),
+        arrayify('0x' + userKeypair.compressedPublicKey.slice(4)),  // Public key is now what's stored on-chain
+        manager.teePublicKey,
         v5lg
       );
 
@@ -622,7 +618,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Alice deposits
       const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -657,12 +653,12 @@ describe("Manager and User Integration (ethers v5)", function () {
       );
 
       // User client setup
-      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const userKeypair = manager.getUserKeypair("alice");
 
       const userClient = new UserClient(
-        userKeypair.privateKey,
-        userKeypair.publicKey,  // Public key is now what's stored on-chain
-        teePublicKey,
+        arrayify(userKeypair.privateKey),
+        arrayify('0x' + userKeypair.compressedPublicKey.slice(4)),  // Public key is now what's stored on-chain
+        manager.teePublicKey,
         v5lg
       );
 
@@ -724,7 +720,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Alice deposits
       const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -756,12 +752,12 @@ describe("Manager and User Integration (ethers v5)", function () {
       );
 
       // User client setup
-      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const userKeypair = manager.getUserKeypair("alice");
 
       const userClient = new UserClient(
-        userKeypair.privateKey,
-        userKeypair.publicKey,  // Public key is now what's stored on-chain
-        teePublicKey,
+        arrayify(userKeypair.privateKey),
+        arrayify('0x' + userKeypair.compressedPublicKey.slice(4)),  // Public key is now what's stored on-chain
+        manager.teePublicKey,
         v5lg
       );
 
@@ -799,7 +795,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Alice deposits
       const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -831,12 +827,12 @@ describe("Manager and User Integration (ethers v5)", function () {
       );
 
       // User client setup
-      const userKeypair = deriveUserKeypair("alice", userMasterKey);
+      const userKeypair = manager.getUserKeypair("alice");
 
       const userClient = new UserClient(
-        userKeypair.privateKey,
-        userKeypair.publicKey,  // Public key is now what's stored on-chain
-        teePublicKey,
+        arrayify(userKeypair.privateKey),
+        arrayify('0x' + userKeypair.compressedPublicKey.slice(4)),  // Public key is now what's stored on-chain
+        manager.teePublicKey,
         v5lg
       );
 
@@ -873,7 +869,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // First deposit brings Alice near max
       const blockBeforeDeposit1 = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo: depositTo1 } = await createDepositTo("alice", teePublicKey);
+      const { depositTo: depositTo1 } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol1 = {
         rand: "0x" + Buffer.from(depositTo1.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo1.user).toString("hex"),
@@ -910,7 +906,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Second deposit would overflow
       const blockBeforeDeposit2 = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo: depositTo2 } = await createDepositTo("alice", teePublicKey);
+      const { depositTo: depositTo2 } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol2 = {
         rand: "0x" + Buffer.from(depositTo2.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo2.user).toString("hex"),
@@ -963,7 +959,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockBeforeDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       for (const username of ["alice", "bob"]) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -1039,7 +1035,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       // Setup: Alice deposits
       const blockBeforeDeposit = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
-      const { depositTo } = await createDepositTo("alice", teePublicKey);
+      const { depositTo } = await createDepositTo("alice", manager.teePublicKey);
       const depositToSol = {
         rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
         user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -1116,7 +1112,7 @@ describe("Manager and User Integration (ethers v5)", function () {
       const blockBeforeDeposits = await lg.runner?.provider?.getBlockNumber() ?? 0;
 
       for (const username of ["alice", "bob"]) {
-        const { depositTo } = await createDepositTo(username, teePublicKey);
+        const { depositTo } = await createDepositTo(username, manager.teePublicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),

@@ -94,6 +94,7 @@ async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext
   if( decrypted !== entropy ) {
     throw new Error("Could not decrypt entropy, round-trip fails!");
   }
+  ctx.setEntropy(decrypted, request.pkpEthAddress);
 
   const dataHashBytes = arrayify('0x'+encryptResult.dataToEncryptHash);
   const ciphertextBytes = new TextEncoder().encode(encryptResult.ciphertext);

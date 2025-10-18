@@ -462,6 +462,11 @@
             "internalType": "struct Signature",
             "name": "sig",
             "type": "tuple"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "teeEncPublicKey",
+            "type": "bytes32"
           }
         ],
         "internalType": "struct Entropy",
@@ -543,6 +548,19 @@
         "internalType": "uint256",
         "name": "dust",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getTeePublicKey",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -821,6 +839,11 @@
             "internalType": "struct Signature",
             "name": "sig",
             "type": "tuple"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "teeEncPublicKey",
+            "type": "bytes32"
           }
         ],
         "internalType": "struct Entropy",

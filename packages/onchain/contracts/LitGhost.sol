@@ -58,6 +58,7 @@ struct Entropy {
     bytes32 digest;
     string ipfsCid;
     Signature sig;
+    bytes32 teeEncPublicKey;
 }
 
 function packLeaf(Leaf memory leaf) pure returns (bytes32) {
@@ -115,6 +116,12 @@ contract LitGhost {
         public view returns (Entropy memory)
     {
         return m_entropy;
+    }
+
+    function getTeePublicKey()
+        public view returns (bytes32)
+    {
+        return m_entropy.teeEncPublicKey;
     }
 
     constructor(IERC20_With_Extensions in_token)

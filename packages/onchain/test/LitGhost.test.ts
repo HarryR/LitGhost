@@ -225,8 +225,8 @@ describe("LitGhost Contract", function () {
         users.push(username);
 
         // Derive user's long-term keypair
-        const { publicKey } = deriveUserKeypair(username, userMasterKey);
-        userPublicKeys.push(publicKey);
+        const { compressedPublicKey } = deriveUserKeypair(username, userMasterKey, "test");
+        userPublicKeys.push(arrayify('0x' + compressedPublicKey.slice(4)));
 
         const { depositTo } = await createDepositTo(
           username,
@@ -342,8 +342,8 @@ describe("LitGhost Contract", function () {
       const encryptedUserIdHex = "0x" + Buffer.from(encryptedUserId).toString("hex");
 
       // Process the deposit with doUpdate
-      const { publicKey } = deriveUserKeypair("user123", userMasterKey);
-      const sharedSecret = computeSharedSecret(teeKeypair.privateKey, publicKey);
+      const { compressedPublicKey } = deriveUserKeypair("user123", userMasterKey, "test");
+      const sharedSecret = computeSharedSecret(teeKeypair.privateKey, arrayify('0x' + compressedPublicKey.slice(4)));
       const balances = [100_00, 0, 0, 0, 0, 0];
       const nonce = 1;
 
@@ -409,7 +409,7 @@ describe("LitGhost Contract", function () {
       const encryptedUserIds: Uint8Array[] = [];
 
       for (const username of usernames) {
-        const { depositTo } = await createDepositTo(username, teeKeypair.publicKey);
+        const { depositTo } = createDepositTo(username, teeKeypair.publicKey);
         const depositToSol = {
           rand: "0x" + Buffer.from(depositTo.rand).toString("hex"),
           user: "0x" + Buffer.from(depositTo.user).toString("hex"),
@@ -430,8 +430,8 @@ describe("LitGhost Contract", function () {
       const nonce = 1;
 
       const userSharedSecrets = usernames.map(username => {
-        const { publicKey } = deriveUserKeypair(username, userMasterKey);
-        return computeSharedSecret(teeKeypair.privateKey, publicKey);
+        const { compressedPublicKey } = deriveUserKeypair(username, userMasterKey, "test");
+        return computeSharedSecret(teeKeypair.privateKey, arrayify('0x' + compressedPublicKey.slice(4)));
       }).concat([Buffer.alloc(32), Buffer.alloc(32), Buffer.alloc(32)]);
 
       const encryptedBalances = encryptLeaf(balances, userSharedSecrets, nonce);

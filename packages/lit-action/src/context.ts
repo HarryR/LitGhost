@@ -8,7 +8,7 @@
  */
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac } from '@monorepo/core/sandboxed';
+import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext } from '@monorepo/core/sandboxed';
 
 interface EntropySig {
   v: number;
@@ -81,6 +81,11 @@ export class GhostContext {
     return currentCid;
   }
 
+  setEntropy(decrypted:string, pkpEthAddress:string) {
+    const decryptedBytes = new TextEncoder().encode(decrypted);
+    this.#entropy = namespacedHmac(decryptedBytes, this.getCurrentIPFSCid(), arrayify(pkpEthAddress));
+  }
+
   async entropy (): Promise<Uint8Array>
   {
     if( this.#entropy === null )
@@ -101,10 +106,14 @@ export class GhostContext {
         authSig: null,
         chain: 'ethereum'
       });
-
-      this.#entropy = namespacedHmac(decrypted, this.getCurrentIPFSCid(), arrayify(pkpEthAddress));
+      this.setEntropy(decrypted, pkpEthAddress);
     }
-    return this.#entropy;
+    return this.#entropy!;
+  }
+
+  async getManager() {
+    const e = await this.entropy();
+    return new ManagerContext(e, this.ghost);
   }
 
   /**

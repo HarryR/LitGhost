@@ -1,4 +1,4 @@
-import { arrayify, Contract, keccak256 } from './ethers-compat.js';
+import { arrayify, Contract, keccak256, SigningKey } from './ethers-compat.js';
 import {
   decryptDepositTo,
   getUserLeafInfo,
@@ -47,6 +47,8 @@ export interface SkippedOperation {
   details: any; // DepositEvent or InternalTransaction or payout object or partial event data
 }
 
+const NAMESPACE_TEE_ENC_PUBKEY = 'LitGhost.teeEncPubKey';
+const NAMESPACE_USER_KEYPAIR = 'LitGhost.userKeyPair';
 const NAMESPACE_CHAFF = "LitGhost.chaff";
 const MAX_BALANCE = 4294967295; // uint32 max
 
@@ -55,12 +57,16 @@ const MAX_BALANCE = 4294967295; // uint32 max
  * All state is derived from on-chain data + master keys
  */
 export class ManagerContext {
+  private teeEncKeyPair:SigningKey;
+  public teePublicKey:Uint8Array;
   constructor(
-    private teePrivateKey: Uint8Array,
-    private userMasterKey: Uint8Array,
+    private teeMasterKey: Uint8Array,
     private contract: Contract,
     private chaffMultiplier: number = 3
-  ) {}
+  ) {
+    this.teeEncKeyPair = deriveUserKeypair(NAMESPACE_TEE_ENC_PUBKEY, this.teeMasterKey, NAMESPACE_TEE_ENC_PUBKEY);
+    this.teePublicKey = arrayify('0x' + this.teeEncKeyPair.compressedPublicKey.slice(4));
+  }
 
   /**
    * Deterministically select chaff leaf indices for privacy
@@ -81,7 +87,7 @@ export class ManagerContext {
     const chaffLeaves = new Set<number>();
 
     // Base data for hashing: chaffSecret + opStart + opCount    
-    let chaffSecret = namespacedHmac(this.teePrivateKey, NAMESPACE_CHAFF, Buffer.concat([
+    let chaffSecret = namespacedHmac(this.teeMasterKey, NAMESPACE_CHAFF, Buffer.concat([
       Buffer.from(opStart.toString()),
       Buffer.from(opCount.toString())
     ]));
@@ -244,8 +250,8 @@ export class ManagerContext {
    * Note: This performs secp256k1 ECDH operations and takes ~0.5-2ms per call.
    * Consider caching results when processing the same user multiple times.
    */
-  getUserPublicKey(telegramUsername: string): Uint8Array {
-    return deriveUserKeypair(telegramUsername, this.userMasterKey).publicKey;
+  getUserKeypair(telegramUsername: string): SigningKey {
+    return deriveUserKeypair(telegramUsername, this.teeMasterKey, NAMESPACE_USER_KEYPAIR);
   }
 
   /**
@@ -254,8 +260,7 @@ export class ManagerContext {
    * Returns 0 if user doesn't exist yet
    */
   async getUserIndex(telegramUsername: string): Promise<number> {
-    const userPublicKey = this.getUserPublicKey(telegramUsername);
-    const userPublicKeyHex = '0x' + Buffer.from(userPublicKey).toString('hex');
+    const userPublicKeyHex = '0x' + this.getUserKeypair(telegramUsername).compressedPublicKey.slice(4);
     const userIndices = await this.contract.getUserLeaves([userPublicKeyHex]);
     // Handle both BigNumber and plain number returns
     const firstIndex = userIndices[0];
@@ -268,8 +273,8 @@ export class ManagerContext {
    * Returns 0 if user doesn't exist or has no balance
    */
   async getBalanceFromChain(telegramUsername: string): Promise<number> {
-    const userPublicKey = this.getUserPublicKey(telegramUsername);
-    const userPublicKeyHex = '0x' + Buffer.from(userPublicKey).toString('hex');
+    const ukp = this.getUserKeypair(telegramUsername);
+    const userPublicKeyHex = '0x' + ukp.compressedPublicKey.slice(4);
 
     // Single call to get user info and leaf
     const userInfo = await this.contract.getUserInfo(userPublicKeyHex);
@@ -288,7 +293,7 @@ export class ManagerContext {
     };
 
     // Compute shared secret for balance decryption
-    const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+    const sharedSecret = this.balanceEncryptionKey(ukp);
     return decryptLeafBalance(leaf, position, sharedSecret);
   }
 
@@ -346,7 +351,7 @@ export class ManagerContext {
         };
 
         // Decrypt telegram username (may throw if corrupted)
-        const telegramUsername = decryptDepositTo(depositTo, this.teePrivateKey);
+        const telegramUsername = decryptDepositTo(depositTo, arrayify(this.teeEncKeyPair.privateKey));
 
         // Validate username format
         if (!isValidTelegramUsername(telegramUsername)) {
@@ -509,6 +514,18 @@ export class ManagerContext {
     return { balanceDeltas, autoRefundPayouts, skippedOperations };
   }
 
+  private balanceEncryptionKey(userPublicKey:SigningKey|Uint8Array)
+  {
+    let upk:Uint8Array;
+    if( userPublicKey instanceof Uint8Array ) {
+      upk = userPublicKey;
+    }
+    else {
+      upk = arrayify('0x' + userPublicKey.compressedPublicKey.slice(4));
+    }
+    return computeSharedSecret(arrayify(this.teeEncKeyPair.privateKey), upk);
+  }
+
   /**
    * Helper: Build user state map from update context
    * Returns user indices, current balances, and identifies new users
@@ -554,8 +571,7 @@ export class ManagerContext {
           nonce: Number(userInfo.leaf.nonce)
         };
 
-        const userPublicKey = this.getUserPublicKey(username);
-        const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+        const sharedSecret = this.balanceEncryptionKey(this.getUserKeypair(username));
         const balance = decryptLeafBalance(leaf, position, sharedSecret);
 
         currentBalances.set(username, balance);
@@ -635,7 +651,7 @@ export class ManagerContext {
     // First, add public keys for users we already know (from affected users in this batch)
     const userIndexToPublicKey = new Map<number, Uint8Array>();
     for (const [username, userIdx] of userIndices) {
-      const publicKey = this.getUserPublicKey(username);
+      const publicKey = arrayify('0x' + this.getUserKeypair(username).compressedPublicKey.slice(4));
       userIndexToPublicKey.set(userIdx, publicKey);
     }
 
@@ -697,7 +713,7 @@ export class ManagerContext {
         if (userIndex < originalUserCount) {
           const userPublicKey = userIndexToPublicKey.get(userIndex);
           if (userPublicKey) {
-            const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+            const sharedSecret = this.balanceEncryptionKey(userPublicKey);
             const balance = decryptBalance(
               oldLeaf.encryptedBalances[position],
               sharedSecret,
@@ -734,7 +750,7 @@ export class ManagerContext {
         if (userIndex < currentUserCount) {
           const userPublicKey = userIndexToPublicKey.get(userIndex);
           if (userPublicKey) {
-            const sharedSecret = computeSharedSecret(this.teePrivateKey, userPublicKey);
+            const sharedSecret = this.balanceEncryptionKey(userPublicKey);
             const encryptedBalance = encryptBalance(
               decryptedBalances[position],
               sharedSecret,
@@ -793,7 +809,7 @@ export class ManagerContext {
 
     // Step 2: Batch fetch user info to get current balances
     const userPublicKeys = Array.from(preliminaryAffectedUsers).map(username =>
-      '0x' + Buffer.from(this.getUserPublicKey(username)).toString('hex')
+      '0x' + this.getUserKeypair(username).compressedPublicKey.slice(4)
     );
     const updateContext = await this.contract.getUpdateContext(userPublicKeys);
 
@@ -856,7 +872,7 @@ export class ManagerContext {
 
         // Check if this is a new user (newUsers contains usernames as strings)
         if (newUsers.has(username)) {
-          const userPubKey = this.getUserPublicKey(username);
+          const userPubKey = arrayify('0x' + this.getUserKeypair(username).compressedPublicKey.slice(4));
           filteredNewUsers.add(userPubKey);
         }
       }

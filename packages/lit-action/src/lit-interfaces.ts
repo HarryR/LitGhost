@@ -96,7 +96,7 @@ export interface LitActionsNamespace {
     dataToEncryptHash: string;
     authSig: any;
     chain: string;
-  }): Promise<Uint8Array>;
+  }): Promise<string>;
 
   /**
    * Decrypt on a single node (simpler, doesn't require node coordination)

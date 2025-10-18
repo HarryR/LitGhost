@@ -434,6 +434,7 @@ async function main() {
         ghostRequest: {
           type: 'bootstrap',
           pkpPublicKey: pkp.publicKey,
+          pkpEthAddress: pkp.ethAddress,
         },
       },
     });

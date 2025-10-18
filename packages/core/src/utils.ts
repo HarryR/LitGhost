@@ -33,6 +33,20 @@ export function isSecp256k1Scalar(hexValue: string): boolean {
   return valueBigInt > 0n && valueBigInt < SECP256K1_N;
 }
 
+function checkSigningKeyCandidate(candidateSK_bytes:Uint8Array)
+{
+  if( isSecp256k1Scalar(hexlify(candidateSK_bytes)) )
+  {
+    const signingKey = new SigningKey(candidateSK_bytes);
+    const compressed = signingKey.compressedPublicKey;
+    if (compressed.startsWith('0x02')) {
+      // Even y-coordinate - return x-coordinate only (32 bytes)
+      return signingKey;
+    }
+  }
+  return null;
+}
+
 /**
  * Derive a deterministic secp256k1 keypair with even y-coordinate
  * Used by the manager to derive user long-term keys from a master key
@@ -43,29 +57,16 @@ export function isSecp256k1Scalar(hexValue: string): boolean {
  */
 export function deriveUserKeypair(
   seed: string,
-  masterKey: Uint8Array
-): { privateKey: Uint8Array; publicKey: Uint8Array } {
+  masterKey: Uint8Array,
+  namespace: string
+): SigningKey {
   let counter = 0;
-  const seedBytes = Buffer.from(seed, 'utf8');
-
+  const seedBytes = new TextEncoder().encode(seed);
   while (true) {
-    const material = concat([
-      seedBytes,
-      encodeUint32(counter)
-    ]);
-    const candidateSK_hex = computeHmac(SupportedAlgorithm.sha256, masterKey, material)
-    if( isSecp256k1Scalar(candidateSK_hex) )
-    {
-      const candidateSK_bytes = arrayify(candidateSK_hex);
-      const signingKey = new SigningKey(candidateSK_bytes);
-      const compressed = signingKey.compressedPublicKey;
-      if (compressed.startsWith('0x02')) {
-        // Even y-coordinate - return x-coordinate only (32 bytes)
-        return {
-          privateKey: candidateSK_bytes,
-          publicKey: arrayify('0x' + compressed.slice(4))
-        };
-      }
+    const candidateSK_hex = namespacedHmac(masterKey, namespace, concat([encodeUint32(counter), seedBytes]));
+    const signingKey = checkSigningKeyCandidate(candidateSK_hex);
+    if( signingKey !== null ) {
+      return signingKey;
     }
     // Odd y-coordinate, increment counter and try again
     counter++;
@@ -144,7 +145,7 @@ export function createNamespacedKey(
   sharedSecret: Uint8Array,
   namespace: string
 ): Uint8Array {
-  const namespaceBytes = Buffer.from(namespace, 'utf8');
+  const namespaceBytes = new TextEncoder().encode(namespace);
   return arrayify(computeHmac(SupportedAlgorithm.sha256, sharedSecret, namespaceBytes));
 }
 
