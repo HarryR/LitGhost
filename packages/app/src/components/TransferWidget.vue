@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ref, computed, watch } from 'vue';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +29,13 @@ const recipientUsername = ref('');
 const amount = ref('');
 const isTransferring = ref(false);
 
+// Auto-strip '@' symbol from username
+watch(recipientUsername, (newValue) => {
+  if (newValue.startsWith('@')) {
+    recipientUsername.value = newValue.slice(1);
+  }
+});
+
 // Validation
 const isValidUsername = computed(() => {
   if (!recipientUsername.value) return true; // Don't show error for empty
@@ -38,21 +45,52 @@ const isValidUsername = computed(() => {
 const isValidAmount = computed(() => {
   if (!amount.value) return true;
   const num = parseFloat(amount.value);
-  return !isNaN(num) && num > 0 && /^\d+(\.\d{1,2})?$/.test(amount.value);
+
+  // Check if it's a valid number
+  if (isNaN(num)) return false;
+
+  // Check if it's positive
+  if (num <= 0) return false;
+
+  // Check decimal places (max 2 decimals for PYUSD which has 6 decimals, but we limit UI to 2)
+  if (!/^\d+(\.\d{1,6})?$/.test(amount.value)) return false;
+
+  // Check if it exceeds balance
+  if (props.pyusdBalance) {
+    const balance = parseFloat(props.pyusdBalance);
+    if (num > balance) return false;
+  }
+
+  return true;
+});
+
+const amountErrorMessage = computed(() => {
+  if (!amount.value || isValidAmount.value) return '';
+
+  const num = parseFloat(amount.value);
+
+  if (isNaN(num) || num <= 0) {
+    return 'Amount must be greater than 0';
+  }
+
+  if (!/^\d+(\.\d{1,6})?$/.test(amount.value)) {
+    return 'Enter a valid amount with up to 6 decimal places';
+  }
+
+  if (props.pyusdBalance) {
+    const balance = parseFloat(props.pyusdBalance);
+    if (num > balance) {
+      return `Insufficient balance. Available: ${props.pyusdBalance} PYUSD`;
+    }
+  }
+
+  return 'Invalid amount';
 });
 
 const canTransfer = computed(() => {
   if (!props.litGhostContract || !props.signer || !props.teePublicKey) return false;
   if (!recipientUsername.value || !amount.value) return false;
   if (!isValidUsername.value || !isValidAmount.value) return false;
-
-  // Check sufficient balance
-  if (props.pyusdBalance) {
-    const balance = parseFloat(props.pyusdBalance);
-    const transferAmount = parseFloat(amount.value);
-    return transferAmount <= balance;
-  }
-
   return true;
 });
 
@@ -180,26 +218,30 @@ async function handleTransfer() {
         <span class="text-3xl">💸</span>
         Transfer PYUSD
       </CardTitle>
-      <CardDescription>
-        Send PYUSD to a Telegram user privately
-      </CardDescription>
     </CardHeader>
     <CardContent class="space-y-4">
       <div class="space-y-2">
-        <Label for="recipient">Recipient Telegram Username</Label>
+        <Label for="recipient" :class="{ 'text-destructive': !isValidUsername }">
+          Recipient Telegram Username
+        </Label>
         <Input
           id="recipient"
           v-model="recipientUsername"
-          placeholder="alice"
-          :class="{ 'border-destructive': !isValidUsername }"
+          placeholder="alice (without @)"
+          :class="{
+            '!border-red-500 focus-visible:!ring-red-500': !isValidUsername,
+            '!border-emerald-500 focus-visible:!ring-emerald-500': recipientUsername && isValidUsername
+          }"
         />
-        <p v-if="!isValidUsername" class="text-sm text-destructive">
+        <p v-if="!isValidUsername" class="text-sm text-destructive font-medium">
           Invalid Telegram username (1-32 chars, letters/numbers/underscores, must start with letter)
         </p>
       </div>
 
       <div class="space-y-2">
-        <Label for="amount">Amount (PYUSD)</Label>
+        <Label for="amount" :class="{ 'text-destructive': !isValidAmount }">
+          Amount (PYUSD)
+        </Label>
         <Input
           id="amount"
           v-model="amount"
@@ -207,10 +249,13 @@ async function handleTransfer() {
           step="0.01"
           min="0"
           placeholder="10.00"
-          :class="{ 'border-destructive': !isValidAmount }"
+          :class="{
+            '!border-red-500 focus-visible:!ring-red-500': !isValidAmount,
+            '!border-emerald-500 focus-visible:!ring-emerald-500': amount && isValidAmount
+          }"
         />
-        <p v-if="!isValidAmount" class="text-sm text-destructive">
-          Enter a valid amount with up to 2 decimal places
+        <p v-if="amountErrorMessage" class="text-sm text-destructive font-medium">
+          {{ amountErrorMessage }}
         </p>
         <p v-else-if="pyusdBalance" class="text-sm text-muted-foreground">
           Available: {{ pyusdBalance }} PYUSD

@@ -47,7 +47,24 @@ function inlineCss(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss(), inlineCss(), sri(), visualizer()],
+  plugins: [
+    vue(),
+    tailwindcss(),
+    inlineCss(),
+    sri(),
+    visualizer({
+      filename: 'stats.html',      // Default tree map
+      gzipSize: true,
+      brotliSize: true,
+    }),
+    // Add text-based output
+    visualizer({
+      filename: 'stats.txt',       // Text tree output
+      template: 'list',                  // or 'raw-data' for JSON
+      gzipSize: true,
+      brotliSize: true,
+    })
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -64,22 +81,8 @@ export default defineConfig({
     
     rollupOptions: {
       output: {
-        /*
-        manualChunks: (id) => {
-          if(  id.includes('/ghostclient.ts')
-            || id.includes('\\ghostclient.ts')
-            || id.includes('@lit-protocol')
-            || id.includes('@walletconnect') ) {
-            return 'ghostclient';
-          }
-          if( id.includes('@ethersproject') ) {
-            return 'ethers';
-          }
-        },        
-        inlineDynamicImports: false,
-        */
         // Inline tiny chunks like the Vue export helper
-        experimentalMinChunkSize: 1024*6
+        //experimentalMinChunkSize: 1024*6
       }
     }    
   },

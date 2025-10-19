@@ -1,16 +1,9 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
 
-import { Contract } from '@ethersproject/contracts';
 import { formatUnits } from '@ethersproject/units';
 import { Web3Provider } from '@ethersproject/providers';
-
-// ERC20 ABI - just the functions we need
-const ERC20_ABI = [
-  'function balanceOf(address owner) view returns (uint256)',
-  'function decimals() view returns (uint8)',
-  'function symbol() view returns (string)'
-]
+import { Token } from '@monorepo/core';
 
 interface UseTokenBalanceOptions {
   provider: Ref<Web3Provider | null>
@@ -29,9 +22,10 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
   const symbol = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const isRefreshing = ref(false) // Track if a refresh is in progress
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
-  let contract: Contract | null = null
+  let contract: typeof Token | null = null
   let shouldFetch = true // Flag to control whether fetching should occur
 
   async function fetchTokenInfo() {
@@ -48,7 +42,7 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     try {
       // Create contract instance
       if (!contract || contract.provider !== provider.value) {
-        contract = new Contract(tokenAddress, ERC20_ABI, provider.value)
+        contract = Token.attach(tokenAddress).connect(provider.value);
       }
 
       // Fetch decimals and symbol (these don't change)
@@ -66,11 +60,20 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     }
   }
 
-  async function fetchBalance() {
+  async function fetchBalance(isManualRefresh = false) {
+    // Prevent concurrent refreshes
+    if (isRefreshing.value) {
+      console.log('Balance refresh already in progress, skipping...');
+      return;
+    }
+
     // Don't fetch if not connected or no provider
     if (!provider.value || !address.value || !shouldFetch) {
-      balance.value = null
-      error.value = null
+      // Only clear balance if this is a connection/disconnection event, not a refresh
+      if (!isManualRefresh) {
+        balance.value = null
+        error.value = null
+      }
       return
     }
 
@@ -79,8 +82,11 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
       if (chainId.value !== null) {
         console.warn(`Balance fetch skipped: wrong network (expected ${expectedChainId}, got ${chainId.value})`);
       }
-      balance.value = null;
-      error.value = null;
+      // Only clear balance if switching networks, not during refresh
+      if (!isManualRefresh) {
+        balance.value = null;
+        error.value = null;
+      }
       return;
     }
 
@@ -95,13 +101,17 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
       return
     }
 
-    loading.value = true
+    isRefreshing.value = true
+    // Only show loading on initial fetch, not on refresh
+    if (!balance.value) {
+      loading.value = true
+    }
     error.value = null
 
     try {
       // Create contract instance if needed
       if (!contract || contract.provider !== provider.value) {
-        contract = new Contract(tokenAddress, ERC20_ABI, provider.value)
+        contract = Token.attach(tokenAddress).connect(provider.value);
       }
 
       const rawBalance = await contract.balanceOf(address.value)
@@ -111,9 +121,13 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     } catch (err: any) {
       console.error('Failed to fetch token balance:', err)
       error.value = err.message || 'Failed to fetch balance'
-      balance.value = null
+      // Don't clear existing balance on error during refresh
+      if (!isManualRefresh && !balance.value) {
+        balance.value = null
+      }
     } finally {
       loading.value = false
+      isRefreshing.value = false
     }
   }
 
@@ -202,6 +216,11 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   });
 
+  // Manual refresh function
+  async function manualRefresh() {
+    await fetchBalance(true);
+  }
+
   return {
     balance,
     decimals,
@@ -209,6 +228,7 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     loading,
     error,
     formattedBalance,
-    refresh: fetchBalance
+    isRefreshing,
+    refresh: manualRefresh
   }
 }
