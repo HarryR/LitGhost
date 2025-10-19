@@ -106,6 +106,7 @@ export interface GhostRequestBootstrap {
   type: 'bootstrap';
   pkpPublicKey: string; // PKP public key (hex string) for signing
   pkpEthAddress: string; // ETH address of public key
+  tgApiSecret: string; // Telegram API secret
 }
 
 /**

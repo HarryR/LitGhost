@@ -438,7 +438,6 @@ async function main() {
     // Construct RPC URL for the target chain
     const targetRpcUrl = `https://1rpc.io/${chainName}`;
     console.log('  Target Chain:', chainName);
-    console.log('  Target RPC URL:', targetRpcUrl);
     console.log('  LitGhost Address:', litGhostAddress);
 
     // Get deployer wallet
@@ -489,6 +488,7 @@ async function main() {
           type: 'bootstrap',
           pkpPublicKey: pkp.publicKey,
           pkpEthAddress: pkp.ethAddress,
+          tgApiSecret: process.env.TELEGRAM_BOT_SECRET_API_KEY,
         },
       },
     });
@@ -601,7 +601,6 @@ async function main() {
       },
       onchain: {
         chain: chainName,
-        rpcUrl: targetRpcUrl,
         litGhostAddress,
         setEntropyTxHash: data.setEntropyTxHash,
       },

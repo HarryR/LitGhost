@@ -1,7 +1,7 @@
 import { GhostRequestBootstrap, GhostResponse, BootstrapResponseData } from '../params';
 import { type GhostContext, EntropySig, Entropy } from '../context';
 
-import { randomBytes, arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
+import { arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
 
 function litEcdsaSigToEthSig(sig: string): EntropySig {
   const sigObj = JSON.parse(sig) as EntropySig;
@@ -19,30 +19,9 @@ function litEcdsaSigToEthSig(sig: string): EntropySig {
  * IMPORTANT: This now calls setEntropy on-chain from within the TEE
  */
 export async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse<BootstrapResponseData>> {
+  const accessControlConditions = ctx.litCidAccessControl();
   const currentCid = ctx.getCurrentIPFSCid();
-  const accessControlConditions = ctx.litCidAccessControl(currentCid);
-
-  const encryptResultJson = await Lit.Actions.runOnce({waitForResponse: true, name: "generate-entropy"}, async () => {
-    const entropy = hexlify(randomBytes(32));
-    let encryptResult = await Lit.Actions.encrypt({
-      accessControlConditions,
-      to_encrypt: new TextEncoder().encode(entropy),
-    });
-    return JSON.stringify({encryptResult, entropy});
-  });
-  const {entropy,encryptResult} = JSON.parse(encryptResultJson!);
-
-  const decrypted = await Lit.Actions.decryptAndCombine({
-    accessControlConditions,
-    ciphertext: encryptResult.ciphertext,
-    dataToEncryptHash: encryptResult.dataToEncryptHash,
-    authSig: null,
-    chain: 'ethereum'
-  });
-  if( decrypted !== entropy ) {
-    throw new Error("Could not decrypt entropy, round-trip fails!");
-  }
-  ctx.setEntropy(decrypted, request.pkpEthAddress);
+  const encryptResult = await ctx.makeEntropy(request.pkpEthAddress, request.tgApiSecret);
 
   // Get the manager to extract teePublicKey
   const manager = await ctx.getManager();
