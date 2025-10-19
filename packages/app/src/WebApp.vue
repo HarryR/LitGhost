@@ -1,22 +1,110 @@
 <script setup lang="ts">
-import { ref, shallowRef, computed } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted } from 'vue'
 import { useWallet } from './composables/useWallet'
 import { useTokenBalance } from './composables/useTokenBalance'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { GhostClient } from './lit'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { LitGhost } from '@monorepo/core';
+import TransferWidget from './components/TransferWidget.vue';
 
 const count = ref(0)
-const { address, chainId, connected, connecting, connect, disconnect, switchChain, rawProvider, provider } = useWallet();
-const gc = shallowRef<GhostClient>();
+const { address, chainId, connected, connecting, connect, disconnect, switchChain, rawProvider, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
+const gc = shallowRef();
+
+// Auto-connect to wallet if already authorized
+onMounted(() => {
+  checkExistingConnection();
+});
+
+// Expected chain ID from environment
+const expectedChainId = parseInt(import.meta.env.VITE_CHAIN_ID);
+
+// LitGhost contract - automatically reconnects when signer changes
+// Only creates contract instance if on the correct network
+const litGhostContract = computed(() => {
+  if (!signer.value) return null;
+
+  // Check if we're on the correct network
+  if (chainId.value !== expectedChainId) {
+    console.warn(`Wrong network: expected chain ID ${expectedChainId} (${import.meta.env.VITE_CHAIN}), got ${chainId.value}`);
+    return null;
+  }
+
+  console.log('Connecting to LitGhost contract', import.meta.env.VITE_CONTRACT_LITGHOST);
+  return LitGhost.attach(import.meta.env.VITE_CONTRACT_LITGHOST).connect(signer.value);
+});
+
+// TEE public key - fetched from contract
+const teePublicKey = ref<string | null>(null);
+
+// Fetch TEE public key when contract becomes available
+watch(litGhostContract, async (contract) => {
+  if (contract) {
+    try {
+      const pubKey = await contract.getTeePublicKey();
+      teePublicKey.value = pubKey;
+    } catch (error) {
+      console.error('Failed to fetch TEE public key:', error);
+      errorMessage.value = 'Failed to fetch TEE public key from contract';
+      showErrorDialog.value = true;
+    }
+  } else {
+    teePublicKey.value = null;
+
+    // If we have a signer but no contract, it means wrong network
+    if (signer.value && chainId.value !== expectedChainId) {
+      console.warn(`Contract not available: wrong network (expected ${expectedChainId}, got ${chainId.value})`);
+    }
+  }
+}, { immediate: true });
+
+// Error dialog state
+const showErrorDialog = ref(false);
+const errorMessage = ref('');
+
+// Success message state
+const showSuccessMessage = ref(false);
+const successMessage = ref('');
+
+function handleTransferError(message: string) {
+  errorMessage.value = message;
+  showErrorDialog.value = true;
+}
+
+function handleTransferSuccess(message: string) {
+  successMessage.value = message;
+  showSuccessMessage.value = true;
+  // Auto-hide success message after 5 seconds
+  setTimeout(() => {
+    showSuccessMessage.value = false;
+  }, 5000);
+}
+
+// Check if any Web3 provider is available
+const hasWeb3Provider = computed(() => {
+  return getProviders().length > 0 || availableProviders.value.size > 0;
+});
+
+const pyusd_token_address = import.meta.env.VITE_PYUSD_TOKEN_ADDRESS;
 
 // PYUSD token balance
 const { balance: pyusdBalance, loading: balanceLoading, error: balanceError } = useTokenBalance({
   provider,
   address,
-  tokenAddress: import.meta.env.VITE_PYUSD_TOKEN_ADDRESS,
+  chainId,
+  expectedChainId,
+  tokenAddress: pyusd_token_address,
   pollInterval: 10000 // Poll every 10 seconds
 });
 
@@ -31,13 +119,23 @@ const formattedBalance = computed(() => {
 });
 
 (async () => {
+  const {GhostClient} = await import('./lit');
   const x = new GhostClient(true);
   await x.connect();;
   gc.value = x;
 })();
 
 async function handleConnect() {
-  await connect();
+  try {
+    const success = await connect();
+    if (!success) {
+      errorMessage.value = 'Failed to connect to wallet. Please try again.';
+      showErrorDialog.value = true;
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'An unknown error occurred while connecting to your wallet.';
+    showErrorDialog.value = true;
+  }
 }
 
 function handleDisconnect() {
@@ -45,7 +143,9 @@ function handleDisconnect() {
 }
 
 function handleSwitchToSepolia() {
-  switchChain('0xaa36a7');
+  // Convert decimal chain ID to hex
+  const chainIdHex = '0x' + expectedChainId.toString(16);
+  switchChain(chainIdHex);
 }
 
 async function handleAddPYUSD() {
@@ -58,7 +158,7 @@ async function handleAddPYUSD() {
       params: {
         type: 'ERC20',
         options: {
-          address: import.meta.env.VITE_PYUSD_TOKEN_ADDRESS,
+          address: pyusd_token_address,
           symbol: 'PYUSD',
           decimals: 6,
           image: 'https://s2.coinmarketcap.com/static/img/coins/64x64/27772.png'
@@ -70,7 +170,9 @@ async function handleAddPYUSD() {
   }
 }
 
-const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID in decimal
+const correctChainName = import.meta.env.VITE_CHAIN;
+
+const isCorrectNetwork = () => chainId.value === expectedChainId;
 </script>
 
 <template>
@@ -105,10 +207,26 @@ const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID i
               👛
             </div>
             <p class="text-muted-foreground mb-6">No wallet connected</p>
-            <Button @click="handleConnect" :disabled="connecting" size="lg" class="w-full sm:w-auto">
+
+            <!-- Show connect button if provider is available -->
+            <Button
+              v-if="hasWeb3Provider"
+              @click="handleConnect"
+              :disabled="connecting"
+              size="lg"
+              class="w-full sm:w-auto"
+            >
               <span v-if="connecting">Connecting...</span>
               <span v-else>Connect Wallet</span>
             </Button>
+
+            <!-- Show message if no provider detected -->
+            <div v-else class="space-y-4">
+              <p class="text-destructive font-medium">No Web3 wallet detected</p>
+              <p class="text-sm text-muted-foreground max-w-md mx-auto">
+                Please install a Web3 wallet browser extension (like MetaMask, Coinbase Wallet, or Rabby) to connect.
+              </p>
+            </div>
           </div>
 
           <!-- Connected State -->
@@ -123,8 +241,16 @@ const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID i
             <div class="space-y-2">
               <p class="text-sm text-muted-foreground">Network</p>
               <div class="flex items-center gap-2">
-                <Badge variant="outline">Chain ID: {{ chainId }}</Badge>
+                <Badge v-if="isCorrectNetwork()" variant="outline" class="border-emerald-400/50 text-emerald-400">
+                  {{ correctChainName }} (Chain ID: {{ chainId }})
+                </Badge>
+                <Badge v-else variant="destructive">
+                  Wrong Network (Chain ID: {{ chainId }})
+                </Badge>
               </div>
+              <p v-if="!isCorrectNetwork()" class="text-sm text-destructive">
+                Please switch to {{ correctChainName }} (Chain ID: {{ expectedChainId }})
+              </p>
             </div>
 
             <Separator />
@@ -140,8 +266,8 @@ const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID i
             <Separator />
 
             <div class="flex flex-col sm:flex-row gap-3 pt-2">
-              <Button v-if="!isSepoliaNetwork()" variant="secondary" @click="handleSwitchToSepolia" class="flex-1">
-                Switch to Sepolia
+              <Button v-if="!isCorrectNetwork()" variant="secondary" @click="handleSwitchToSepolia" class="flex-1">
+                Switch to {{ correctChainName }}
               </Button>
               <Button variant="outline" @click="handleAddPYUSD" class="flex-1">
                 Add PYUSD Token
@@ -153,6 +279,18 @@ const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID i
           </div>
         </CardContent>
       </Card>
+
+      <!-- Transfer Widget - Only visible when contract is available (correct network) -->
+      <TransferWidget
+        v-if="litGhostContract"
+        :lit-ghost-contract="litGhostContract"
+        :signer="signer"
+        :pyusd-balance="pyusdBalance"
+        :token-address="pyusd_token_address"
+        :tee-public-key="teePublicKey"
+        @error="handleTransferError"
+        @success="handleTransferSuccess"
+      />
 
       <!-- Demo Counter -->
       <Card>
@@ -168,6 +306,31 @@ const isSepoliaNetwork = () => chainId.value === 11155111; // Sepolia chain ID i
           </Button>
         </CardContent>
       </Card>
+    </div>
+
+    <!-- Error Dialog -->
+    <AlertDialog v-model:open="showErrorDialog">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Error</AlertDialogTitle>
+          <AlertDialogDescription>
+            {{ errorMessage }}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction @click="showErrorDialog = false">
+            OK
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Success Message -->
+    <div
+      v-if="showSuccessMessage"
+      class="fixed bottom-4 right-4 bg-emerald-500 text-white px-6 py-4 rounded-lg shadow-lg animate-in slide-in-from-bottom-5"
+    >
+      <p class="font-medium">{{ successMessage }}</p>
     </div>
   </div>
 </template>

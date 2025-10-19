@@ -75,6 +75,53 @@ function removeEventListeners(walletProvider: any) {
 }
 
 export function useWallet() {
+  // Common logic to setup wallet state from provider and accounts
+  function setupWalletState(walletProvider: any, accounts: string[], chainIdHex: string) {
+    // Store provider reference
+    currentProvider = walletProvider
+
+    // Create ethers provider and signer
+    const ethersProvider = new Web3Provider(walletProvider, 'any')
+
+    // Update state
+    address.value = accounts[0]
+    chainId.value = parseInt(chainIdHex, 16)
+    connected.value = true
+    provider.value = ethersProvider
+    signer.value = ethersProvider.getSigner()
+    rawProvider.value = walletProvider
+
+    // Setup event listeners
+    setupEventListeners(walletProvider)
+  }
+
+  // Check for existing connection on mount
+  async function checkExistingConnection() {
+    try {
+      const walletProvider = eip6963.getProvider()
+      if (!walletProvider) return false
+
+      // Check if already connected (don't request, just check)
+      const accounts = await walletProvider.request({
+        method: 'eth_accounts'
+      })
+
+      if (accounts.length === 0) return false
+
+      // Get chain ID
+      const chainIdHex = await walletProvider.request({
+        method: 'eth_chainId'
+      })
+
+      setupWalletState(walletProvider, accounts, chainIdHex)
+      console.log('Auto-connected to existing wallet session')
+      return true
+    } catch (error) {
+      console.error('Failed to check existing connection:', error)
+      return false
+    }
+  }
+
   async function connect(rdns?: string) {
     connecting.value = true
 
@@ -100,28 +147,10 @@ export function useWallet() {
         method: 'eth_chainId'
       })
 
-      // Store provider reference
-      currentProvider = walletProvider
-
-      // Create ethers provider and signer
-      const ethersProvider = new Web3Provider(walletProvider, 'any')
-
-      // Update state
-      address.value = accounts[0]
-      chainId.value = parseInt(chainIdHex, 16)
-      connected.value = true
-      provider.value = ethersProvider
-      signer.value = ethersProvider.getSigner()
-      rawProvider.value = walletProvider
-
-      // Setup event listeners
-      setupEventListeners(walletProvider)
-
+      setupWalletState(walletProvider, accounts, chainIdHex)
       return true
-    } catch (error) {
-      console.error('Failed to connect wallet:', error)
-      return false
-    } finally {
+    }
+    finally {
       connecting.value = false
     }
   }
@@ -158,16 +187,12 @@ export function useWallet() {
   }) {
     if (!currentProvider) return false
 
-    try {
-      await currentProvider.request({
-        method: 'wallet_addEthereumChain',
-        params: [chainParams]
-      })
-      return true
-    } catch (error) {
-      console.error('Failed to add chain:', error)
-      return false
-    }
+    await currentProvider.request({
+      method: 'wallet_addEthereumChain',
+      params: [chainParams]
+    });
+
+    return true
   }
 
   // Cleanup on unmount
@@ -192,6 +217,7 @@ export function useWallet() {
     disconnect,
     switchChain,
     addChain,
+    checkExistingConnection,
 
     // EIP-6963
     availableProviders: eip6963.providers,

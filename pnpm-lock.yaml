@@ -55,6 +55,9 @@ importers:
       '@ethersproject/providers':
         specifier: 5.8.0
         version: 5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@ethersproject/solidity':
+        specifier: 5.8.0
+        version: 5.8.0
       '@ethersproject/units':
         specifier: 5.8.0
         version: 5.8.0

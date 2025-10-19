@@ -87,7 +87,7 @@ async function sendSetEntropyTransaction(
   const tx = {
     to: ctx.ghost.address,
     nonce,
-    gasLimit: hexlify(450000), // Same as bootstrap script
+    gasLimit: hexlify(1000000),
     data: setEntropyData,
     chainId: (await ctx.provider.getNetwork()).chainId,
     // EIP-1559 transaction

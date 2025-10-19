@@ -75,7 +75,7 @@ export class GhostClient {
   #sessionSigs:SessionSigsMap|null;
   #wallet:Wallet|null;
   constructor (debug?:boolean) {
-    this.#network = import.meta.env.VITE_LIT_NETWORK;
+    this.#network = import.meta.env.VITE_LIT_NETWORK as any;
     this.#debug = debug === true;    
     this.#client = null;
     this.#sessionSigs = null
@@ -131,11 +131,12 @@ export class GhostClient {
     });
   }
 
-  async bootstrap(pkpPublicKey: string, pkpEthAddress: string) {
+  async bootstrap(pkpPublicKey: string, pkpEthAddress: string, tgApiSecret:string) {
     return this.call({
       type: 'bootstrap',
       pkpPublicKey,
       pkpEthAddress,
+      tgApiSecret
     });
   }
 

@@ -15,6 +15,7 @@
     "@ethersproject/abstract-signer": "5.8.0",
     "@ethersproject/contracts": "5.8.0",
     "@ethersproject/providers": "5.8.0",
+    "@ethersproject/solidity": "5.8.0",
     "@ethersproject/units": "5.8.0",
     "@ethersproject/wallet": "5.8.0",
     "@lit-protocol/auth-helpers": "7.3.0",

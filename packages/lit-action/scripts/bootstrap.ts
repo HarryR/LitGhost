@@ -301,8 +301,8 @@ async function mintRestricted (litContracts:LitContracts, ipfsCid:string) {
     [ipfsCidBytes],
     ['0x'],
     [[AUTH_METHOD_SCOPE.SignAnything]],
-    false,
-    false,
+    false, // addPkpEthAddressAsPermittedAddress
+    true, // sendPkpToItself
     { value: mintCost }
   );
 
@@ -327,7 +327,8 @@ async function mintRestricted (litContracts:LitContracts, ipfsCid:string) {
   return {
     tokenId: ethers.utils.hexZeroPad(tokenId, 32),
     publicKey: publicKey.slice(2),
-    ethAddress
+    ethAddress,
+    mintTxHash: tx.hash
   }
 }
 
@@ -361,7 +362,6 @@ async function main() {
     const balance = await wallet.getBalance();
     
     const hardCodedAppWalletSecret = ethers.utils.randomBytes(32);
-    const hardCodedAppWallet = new ethers.Wallet(hardCodedAppWalletSecret, provider);
 
     console.log('  Wallet Address:', wallet.address);
     console.log('  Balance:', ethers.utils.formatEther(balance), 'testnet ETH');
@@ -402,6 +402,7 @@ async function main() {
     console.log('    Token ID:', pkp.tokenId);
     console.log('    Public Key:', pkp.publicKey);
     console.log('    ETH Address:', pkp.ethAddress);
+    console.log('    TX Hash:', pkp.mintTxHash);
     console.log('    Restricted to IPFS CID:', ipfsCid);
     console.log();
 
@@ -451,8 +452,8 @@ async function main() {
     const deployerWallet = new ethers.Wallet(deployerPrivateKey, targetProvider);
     console.log('  Deployer Address:', deployerWallet.address);
 
-    // Estimate gas cost for setEntropy call (450k gas limit)
-    const estimatedGasUnits = 450000;
+    // Estimate gas cost for setEntropy call
+    const estimatedGasUnits = 1000000;
     const feeData = await targetProvider.getFeeData();
     const maxFeePerGas = feeData.maxFeePerGas || ethers.BigNumber.from('50000000000'); // 50 gwei fallback
     const estimatedCost = ethers.BigNumber.from(estimatedGasUnits).mul(maxFeePerGas);
@@ -586,10 +587,10 @@ async function main() {
         tokenId: pkp.tokenId,
         publicKey: pkp.publicKey,
         ethAddress: pkp.ethAddress,
+        mintTxHash: pkp.mintTxHash
       },
       litAction: {
         ipfsCid,
-        path: litActionPath,
         size: litActionCode.length,
       },
       encryptedData: {

@@ -72,7 +72,7 @@ export default defineConfig({
         },
         inlineDynamicImports: false,
         // Inline tiny chunks like the Vue export helper
-        experimentalMinChunkSize: 1024*10
+        experimentalMinChunkSize: 1024*20
       }
     }
   },

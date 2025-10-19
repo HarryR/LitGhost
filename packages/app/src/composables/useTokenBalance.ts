@@ -15,12 +15,14 @@ const ERC20_ABI = [
 interface UseTokenBalanceOptions {
   provider: Ref<Web3Provider | null>
   address: Ref<string | null>
+  chainId: Ref<number | null>
+  expectedChainId: number
   tokenAddress: string
   pollInterval?: number // in milliseconds
 }
 
 export function useTokenBalance(options: UseTokenBalanceOptions) {
-  const { provider, address, tokenAddress, pollInterval = 10000 } = options
+  const { provider, address, chainId, expectedChainId, tokenAddress, pollInterval = 10000 } = options
 
   const balance = ref<string | null>(null)
   const decimals = ref<number | null>(null)
@@ -30,9 +32,18 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let contract: Contract | null = null
+  let shouldFetch = true // Flag to control whether fetching should occur
 
   async function fetchTokenInfo() {
-    if (!provider.value) return
+    if (!provider.value || !shouldFetch) return
+
+    // Only fetch if on correct network
+    if (chainId.value === null || chainId.value !== expectedChainId) {
+      if (chainId.value !== null) {
+        console.warn(`Token info fetch skipped: wrong network (expected ${expectedChainId}, got ${chainId.value})`);
+      }
+      return;
+    }
 
     try {
       // Create contract instance
@@ -57,10 +68,20 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
 
   async function fetchBalance() {
     // Don't fetch if not connected or no provider
-    if (!provider.value || !address.value) {
+    if (!provider.value || !address.value || !shouldFetch) {
       balance.value = null
       error.value = null
       return
+    }
+
+    // Only fetch if on correct network
+    if (chainId.value === null || chainId.value !== expectedChainId) {
+      if (chainId.value !== null) {
+        console.warn(`Balance fetch skipped: wrong network (expected ${expectedChainId}, got ${chainId.value})`);
+      }
+      balance.value = null;
+      error.value = null;
+      return;
     }
 
     // Fetch token info if we don't have it yet
@@ -98,6 +119,7 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
 
   function startPolling() {
     stopPolling()
+    shouldFetch = true // Re-enable fetching
 
     // Fetch immediately
     fetchBalance()
@@ -109,6 +131,7 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
   }
 
   function stopPolling() {
+    shouldFetch = false // Prevent any in-flight or queued fetches
     if (pollTimer) {
       clearInterval(pollTimer)
       pollTimer = null
@@ -146,6 +169,22 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
       error.value = null
     }
   }, { immediate: true })
+
+  // Watch for chain ID changes
+  watch(chainId, (newChainId) => {
+    if (newChainId !== expectedChainId) {
+      // Wrong network - clear balance and stop polling
+      stopPolling()
+      balance.value = null
+      decimals.value = null
+      symbol.value = null
+      error.value = null
+      contract = null
+    } else if (provider.value && address.value) {
+      // Correct network - restart polling
+      startPolling()
+    }
+  })
 
   // Cleanup on unmount
   onUnmounted(() => {
