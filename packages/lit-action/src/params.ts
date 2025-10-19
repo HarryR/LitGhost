@@ -58,6 +58,14 @@ export interface RegisterTelegramResponseData {
   };
 }
 
+/**
+ * Response data for submit-deposit handler
+ */
+export interface SubmitDepositResponseData {
+  depositTxHash: string;
+  updateTxHash: string;
+}
+
 // ============================================================================
 // Type map linking request types to their response data types
 // ============================================================================
@@ -66,6 +74,7 @@ export interface GhostResponseDataMap {
   'echo': EchoResponseData;
   'bootstrap': BootstrapResponseData;
   'register-telegram': RegisterTelegramResponseData;
+  'submit-deposit': SubmitDepositResponseData;
 }
 
 /**
@@ -110,10 +119,33 @@ export interface GhostRequestBootstrap {
 }
 
 /**
+ * Submit deposit request - submits an ERC-3009 deposit transaction and processes it
+ * Used for gas-less transfers where the bot (PKP) pays for gas
+ */
+export interface GhostRequestSubmitDeposit {
+  type: 'submit-deposit';
+  depositTo: {
+    rand: string; // 0x-prefixed hex string (32 bytes)
+    user: string; // 0x-prefixed hex string (32 bytes)
+  };
+  auth3009: {
+    from: string; // User's address
+    value: string; // Amount in token units (as string to handle bigint)
+    validAfter: number;
+    validBefore: number;
+    sig: {
+      v: number;
+      r: string; // 0x-prefixed hex string
+      s: string; // 0x-prefixed hex string
+    };
+  };
+}
+
+/**
  * Discriminated union of all possible ghost request types
  * Add new request types here as you build functionality
  */
-export type GhostRequest = GhostRequestEcho | GhostRequestBootstrap | GhostRequestRegisterTelegram;
+export type GhostRequest = GhostRequestEcho | GhostRequestBootstrap | GhostRequestRegisterTelegram | GhostRequestSubmitDeposit;
 
 // ============================================================================
 // Request Type Validators
@@ -144,6 +176,50 @@ export function validateBootstrapRequest(req: any): GhostRequestBootstrap {
   return req as GhostRequestBootstrap;
 }
 
+/**
+ * Validate submit-deposit request
+ * Throws descriptive errors if validation fails
+ */
+export function validateSubmitDepositRequest(req: any): GhostRequestSubmitDeposit {
+  if (!req.depositTo || typeof req.depositTo !== 'object') {
+    throw new Error('depositTo must be an object');
+  }
+  if (typeof req.depositTo.rand !== 'string' || !req.depositTo.rand.startsWith('0x')) {
+    throw new Error('depositTo.rand must be a 0x-prefixed hex string');
+  }
+  if (typeof req.depositTo.user !== 'string' || !req.depositTo.user.startsWith('0x')) {
+    throw new Error('depositTo.user must be a 0x-prefixed hex string');
+  }
+  if (!req.auth3009 || typeof req.auth3009 !== 'object') {
+    throw new Error('auth3009 must be an object');
+  }
+  if (typeof req.auth3009.from !== 'string') {
+    throw new Error('auth3009.from must be a string (Ethereum address)');
+  }
+  if (typeof req.auth3009.value !== 'string') {
+    throw new Error('auth3009.value must be a string');
+  }
+  if (typeof req.auth3009.validAfter !== 'number') {
+    throw new Error('auth3009.validAfter must be a number');
+  }
+  if (typeof req.auth3009.validBefore !== 'number') {
+    throw new Error('auth3009.validBefore must be a number');
+  }
+  if (!req.auth3009.sig || typeof req.auth3009.sig !== 'object') {
+    throw new Error('auth3009.sig must be an object');
+  }
+  if (typeof req.auth3009.sig.v !== 'number') {
+    throw new Error('auth3009.sig.v must be a number');
+  }
+  if (typeof req.auth3009.sig.r !== 'string' || !req.auth3009.sig.r.startsWith('0x')) {
+    throw new Error('auth3009.sig.r must be a 0x-prefixed hex string');
+  }
+  if (typeof req.auth3009.sig.s !== 'string' || !req.auth3009.sig.s.startsWith('0x')) {
+    throw new Error('auth3009.sig.s must be a 0x-prefixed hex string');
+  }
+  return req as GhostRequestSubmitDeposit;
+}
+
 // ============================================================================
 // Main Validation Functions
 // ============================================================================
@@ -170,6 +246,10 @@ export function validateGhostRequest(value: unknown): GhostRequest {
 
   if (req.type === 'bootstrap') {
     return validateBootstrapRequest(req);
+  }
+
+  if (req.type === 'submit-deposit') {
+    return validateSubmitDepositRequest(req);
   }
 
   throw new Error(`Unknown ghostRequest type: ${req.type}`);

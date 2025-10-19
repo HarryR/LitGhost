@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { executeLitAction, createPersistentState, type PersistentTestState } from '../test-server/executor';
 import { loadLitActionCode } from '../test-server/test-helpers';
-import type { GhostResponse } from '../handler';
+import type { GhostResponse } from '../params';
 
 describe('Lit Action', () => {
   let persistentState: PersistentTestState;

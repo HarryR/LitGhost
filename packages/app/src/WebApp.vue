@@ -17,14 +17,30 @@ import {
 } from '@/components/ui/alert-dialog'
 import { LitGhost } from '@monorepo/core';
 import TransferWidget from './components/TransferWidget.vue';
+import type { IGhostClient } from './ighostclient';
 
-const count = ref(0)
 const { address, chainId, connected, connecting, connect, disconnect, switchChain, rawProvider, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
-const gc = shallowRef();
+const gc = shallowRef<IGhostClient | null>(null);
+const gcLoading = ref(true);
 
 // Auto-connect to wallet if already authorized
 onMounted(() => {
   checkExistingConnection();
+
+  // Load GhostClient in background without blocking initial render
+  import('./ghostclient')
+    .then(async ({ GhostClient }) => {
+      const x = new GhostClient(true);
+      await x.connect();
+      gc.value = x;
+      console.log('GhostClient ready');
+    })
+    .catch(err => {
+      console.error('Failed to load GhostClient:', err);
+    })
+    .finally(() => {
+      gcLoading.value = false;
+    });
 });
 
 // Expected chain ID from environment
@@ -99,7 +115,7 @@ const hasWeb3Provider = computed(() => {
 const pyusd_token_address = import.meta.env.VITE_PYUSD_TOKEN_ADDRESS;
 
 // PYUSD token balance
-const { balance: pyusdBalance, loading: balanceLoading, error: balanceError } = useTokenBalance({
+const { balance: pyusdBalance, formattedBalance } = useTokenBalance({
   provider,
   address,
   chainId,
@@ -107,23 +123,6 @@ const { balance: pyusdBalance, loading: balanceLoading, error: balanceError } = 
   tokenAddress: pyusd_token_address,
   pollInterval: 10000 // Poll every 10 seconds
 });
-
-const formattedBalance = computed(() => {
-  if (balanceLoading.value) return 'Loading...';
-  if (balanceError.value) return 'Error loading balance';
-  if (pyusdBalance.value === null) return '--';
-
-  // Format with browser's locale and 2 decimal places
-  const num = parseFloat(pyusdBalance.value);
-  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-});
-
-(async () => {
-  const {GhostClient} = await import('./lit');
-  const x = new GhostClient(true);
-  await x.connect();;
-  gc.value = x;
-})();
 
 async function handleConnect() {
   try {
@@ -280,32 +279,32 @@ const isCorrectNetwork = () => chainId.value === expectedChainId;
         </CardContent>
       </Card>
 
-      <!-- Transfer Widget - Only visible when contract is available (correct network) -->
+      <!-- Loading state for transfer functionality -->
+      <Card v-if="litGhostContract && !gc && gcLoading">
+        <CardHeader>
+          <CardTitle class="flex items-center gap-2">
+            <span class="text-3xl">💸</span>
+            Transfer PYUSD
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="text-center py-8">
+          <div class="w-16 h-16 mx-auto mb-4 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <p class="text-muted-foreground">Loading transfer functionality...</p>
+        </CardContent>
+      </Card>
+
+      <!-- Transfer Widget - Only visible when contract and ghost client are available -->
       <TransferWidget
-        v-if="litGhostContract"
+        v-if="litGhostContract && gc"
         :lit-ghost-contract="litGhostContract"
         :signer="signer"
         :pyusd-balance="pyusdBalance"
         :token-address="pyusd_token_address"
         :tee-public-key="teePublicKey"
+        :ghost-client="gc"
         @error="handleTransferError"
         @success="handleTransferSuccess"
       />
-
-      <!-- Demo Counter -->
-      <Card>
-        <CardHeader>
-          <CardTitle class="text-center">Demo Counter</CardTitle>
-        </CardHeader>
-        <CardContent class="text-center space-y-4">
-          <div class="text-6xl font-bold">
-            {{ count }}
-          </div>
-          <Button @click="count++" size="lg" class="w-full sm:w-auto">
-            Increment Counter
-          </Button>
-        </CardContent>
-      </Card>
     </div>
 
     <!-- Error Dialog -->

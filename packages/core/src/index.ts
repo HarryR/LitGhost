@@ -55,7 +55,9 @@ export {
   hexlify,
   toUtf8Bytes,
   randomBytes,
-  verifyMessage
+  verifyMessage,
+  recoverPublicKey,
+  joinSignature
 } from './ethers-compat';
 
 // Manager utilities

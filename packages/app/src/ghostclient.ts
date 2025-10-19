@@ -9,23 +9,7 @@ import {
 } from '@monorepo/lit-action/params';
 
 import { Wallet } from '@ethersproject/wallet';
-
-/**
- * Custom error type for Ghost client failures
- */
-export class GhostClientError extends Error {
-  constructor(
-    message: string,
-    public readonly details?: any
-  ) {
-    super(message);
-    this.name = 'GhostClientError';
-    // Maintains proper stack trace for where our error was thrown (only available on V8)
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, GhostClientError);
-    }
-  }
-}
+import { GhostClientError, type IGhostClient } from './ighostclient';
 
 async function getSessionSigsForAction(
   litNodeClient: LitNodeClient,
@@ -68,7 +52,7 @@ async function getSessionSigsForAction(
   return sessionSigs;
 }
 
-export class GhostClient {
+export class GhostClient implements IGhostClient {
   #network: LIT_NETWORK_VALUES;
   #debug: boolean;
   #client:LitNodeClient|null;
@@ -76,13 +60,13 @@ export class GhostClient {
   #wallet:Wallet|null;
   constructor (debug?:boolean) {
     this.#network = import.meta.env.VITE_LIT_NETWORK as any;
-    this.#debug = debug === true;    
+    this.#debug = debug === true;
     this.#client = null;
     this.#sessionSigs = null
     this.#wallet = null;
   }
 
-  async connect()
+  async connect(): Promise<void>
   {
     if( this.#sessionSigs === null )
     {
@@ -97,13 +81,12 @@ export class GhostClient {
       this.#sessionSigs = await getSessionSigsForAction(c, this.#wallet, import.meta.env.VITE_GHOST_IPFSCID);
       this.#client = c;
     }
-    return this.#client!;
   }
 
   async call<T extends GhostRequest>(request: T): Promise<GhostResponseDataMap[T['type']]> {
     // TODO: check if #sessionSigs will expire soon, if so - re-generate them
-    const client = await this.connect();
-    const result = await client.executeJs({
+    await this.connect();
+    const result = await this.#client!.executeJs({
       ipfsId: import.meta.env.VITE_GHOST_IPFSCID,
       sessionSigs: this.#sessionSigs!,
       jsParams: {
@@ -144,6 +127,30 @@ export class GhostClient {
     return this.call({
       type: 'register-telegram',
       initDataRaw,
+    });
+  }
+
+  async submitDeposit(params: {
+    depositTo: {
+      rand: string;
+      user: string;
+    };
+    auth3009: {
+      from: string;
+      value: string;
+      validAfter: number;
+      validBefore: number;
+      sig: {
+        v: number;
+        r: string;
+        s: string;
+      };
+    };
+  }) {
+    return this.call({
+      type: 'submit-deposit',
+      depositTo: params.depositTo,
+      auth3009: params.auth3009,
     });
   }
 }

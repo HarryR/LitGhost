@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createDepositTo, isValidTelegramUsername } from '@monorepo/core';
 import type { Signer } from '@ethersproject/abstract-signer';
-import type { Contract } from '@ethersproject/contracts';
+import { Contract } from '@ethersproject/contracts';
 import { keccak256 as solidityKeccak256 } from '@ethersproject/solidity';
+import type { IGhostClient } from '../ighostclient';
 
 const props = defineProps<{
   litGhostContract: Contract | null;
@@ -15,6 +16,7 @@ const props = defineProps<{
   pyusdBalance: string | null;
   tokenAddress: string;
   teePublicKey: string | null;
+  ghostClient: IGhostClient;
 }>();
 
 const emit = defineEmits<{
@@ -89,7 +91,6 @@ async function handleTransfer() {
     const validBefore = Math.floor(Date.now() / 1000) + 3600; // Valid for 1 hour
 
     // Get token name for EIP-712 domain
-    const { Contract } = await import('@ethersproject/contracts');
     const tokenABI = ['function name() view returns (string)'];
     const tokenContract = new Contract(props.tokenAddress, tokenABI, props.signer);
     const tokenName = await tokenContract.name();
@@ -136,7 +137,7 @@ async function handleTransfer() {
     };
 
     // Construct Auth3009 struct
-    const auth = {
+    const auth3009 = {
       from: signerAddress,
       value: amountInUnits.toString(),
       validAfter: validAfter,
@@ -148,17 +149,16 @@ async function handleTransfer() {
       },
     };
 
-    // Call depositERC3009 on LitGhost contract
-    const tx = await props.litGhostContract['depositERC3009((bytes32,bytes32),(address,uint256,uint256,uint256,(uint8,bytes32,bytes32)))'](
-      depositToSol,
-      auth
-    );
+    // Submit deposit via Lit Action (gas-less for user - bot pays gas)
+    emit('success', 'Submitting transfer via Lit Action...');
 
-    emit('success', `Transfer initiated! Tx: ${tx.hash}`);
+    const result = await props.ghostClient.submitDeposit({
+      depositTo: depositToSol,
+      auth3009: auth3009,
+    });
 
-    await tx.wait();
-
-    emit('success', `Transfer confirmed! Sent ${amount.value} PYUSD to @${recipientUsername.value}`);
+    emit('success', `Transfer submitted! Deposit tx: ${result.depositTxHash.slice(0, 10)}...`);
+    emit('success', `Transfer confirmed! Update tx: ${result.updateTxHash.slice(0, 10)}... Sent ${amount.value} PYUSD to @${recipientUsername.value}`);
 
     // Clear form
     recipientUsername.value = '';

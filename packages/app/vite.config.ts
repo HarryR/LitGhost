@@ -61,21 +61,27 @@ export default defineConfig({
     assetsDir: '',
     cssCodeSplit: false,
     modulePreload: true,
+    
     rollupOptions: {
       output: {
+        /*
         manualChunks: (id) => {
-          if( id.includes('@lit-protocol') || id.includes('@walletconnect') ) {
-            return 'lit-protocol';
+          if(  id.includes('/ghostclient.ts')
+            || id.includes('\\ghostclient.ts')
+            || id.includes('@lit-protocol')
+            || id.includes('@walletconnect') ) {
+            return 'ghostclient';
           }
           if( id.includes('@ethersproject') ) {
             return 'ethers';
           }
-        },
+        },        
         inlineDynamicImports: false,
+        */
         // Inline tiny chunks like the Vue export helper
-        experimentalMinChunkSize: 1024*20
+        experimentalMinChunkSize: 1024*6
       }
-    }
+    }    
   },
   test: {
     environment: 'happy-dom',

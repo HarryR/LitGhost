@@ -21,7 +21,7 @@ function litEcdsaSigToEthSig(sig: string): EntropySig {
 export async function handleBootstrap(request: GhostRequestBootstrap, ctx: GhostContext): Promise<GhostResponse<BootstrapResponseData>> {
   const accessControlConditions = ctx.litCidAccessControl();
   const currentCid = ctx.getCurrentIPFSCid();
-  const encryptResult = await ctx.makeEntropy(request.pkpEthAddress, request.tgApiSecret);
+  const encryptResult = await ctx.makeEntropy(request.pkpEthAddress, request.pkpPublicKey, request.tgApiSecret);
 
   // Get the manager to extract teePublicKey
   const manager = await ctx.getManager();

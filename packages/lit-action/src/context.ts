@@ -8,7 +8,7 @@
  */
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext, hexlify, randomBytes } from '@monorepo/core/sandboxed';
+import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext, hexlify, randomBytes, recoverPublicKey, joinSignature } from '@monorepo/core/sandboxed';
 
 export interface EntropySig {
   v: number;
@@ -53,6 +53,8 @@ export class GhostContext {
 
   #privateParams: PrivateParams|null;
   #entropy: Uint8Array|null;
+  #pkpPublicKey: string|null;
+  #pkpEthAddress: string|null;
 
   /**
    * Create a new GhostContext
@@ -70,6 +72,8 @@ export class GhostContext {
   ) {
     this.#entropy = null;
     this.#privateParams = null;
+    this.#pkpPublicKey = null;
+    this.#pkpEthAddress = null;
 
     this.tgBotId = tgBotId;
     this.tgPubKey = tgPubKey;
@@ -105,10 +109,32 @@ export class GhostContext {
     return this.#privateParams!;
   }
 
-  async makeEntropy(pkpEthAddress: string, tgApiSecret:string) {
+  /**
+   * Get the PKP public key (recovered from entropy signature)
+   * Must call entropy() first to initialize
+   */
+  get pkpPublicKey(): string {
+    if (this.#pkpPublicKey === null) {
+      throw new Error('PKP public key not initialized - call entropy() first');
+    }
+    return this.#pkpPublicKey;
+  }
+
+  /**
+   * Get the PKP Ethereum address (recovered from entropy signature)
+   * Must call entropy() first to initialize
+   */
+  get pkpEthAddress(): string {
+    if (this.#pkpEthAddress === null) {
+      throw new Error('PKP ETH address not initialized - call entropy() first');
+    }
+    return this.#pkpEthAddress;
+  }
+
+  async makeEntropy(pkpEthAddress: string, pkpPublicKey: string, tgApiSecret:string) {
     const currentCid = this.getCurrentIPFSCid();
     const accessControlConditions = this.litCidAccessControl(currentCid);
-  
+
     const encryptResultJson = await Lit.Actions.runOnce({waitForResponse: true, name: "generate-entropy"}, async () => {
       const de:DecryptedEntropy = {
         x: hexlify(randomBytes(32)),
@@ -124,7 +150,7 @@ export class GhostContext {
       return JSON.stringify({encryptResult, deJson});
     });
     const {deJson,encryptResult} = JSON.parse(encryptResultJson!);
-  
+
     // Verify we can round-trip it
     const decryptedJson = await Lit.Actions.decryptAndCombine({
       accessControlConditions,
@@ -136,7 +162,7 @@ export class GhostContext {
     if( decryptedJson !== deJson ) {
       throw new Error("Could not decrypt entropy, round-trip fails!");
     }
-    this.setEntropy(decryptedJson, pkpEthAddress);
+    this.setEntropy(decryptedJson, pkpEthAddress, pkpPublicKey);
     return encryptResult as EncryptResult;
   }
   
@@ -148,7 +174,7 @@ export class GhostContext {
     return currentCid;
   }
 
-  setEntropy(decryptedJson:string, pkpEthAddress:string) {
+  setEntropy(decryptedJson:string, pkpEthAddress:string, pkpPublicKey:string) {
     const de:DecryptedEntropy = JSON.parse(decryptedJson);
     if( de.x === undefined || typeof de.x !== 'string' || de.x === undefined || ! de.x.startsWith('0x') ) {
       throw new Error('Bootstrap failure, decrypted entropy x param is invalid or isnt hex!');
@@ -156,6 +182,8 @@ export class GhostContext {
     const decryptedBytes = new TextEncoder().encode(de.x);
     this.#privateParams = de.params;
     this.#entropy = namespacedHmac(decryptedBytes, this.getCurrentIPFSCid(), arrayify(pkpEthAddress));
+    this.#pkpEthAddress = pkpEthAddress;
+    this.#pkpPublicKey = pkpPublicKey;
     return this.#entropy;
   }
 
@@ -165,16 +193,21 @@ export class GhostContext {
     {
       return this.#entropy;
     }
-  
+
     // Fetch entropy from contract
     const e = await this.ghost.getEntropy() as Entropy;
 
-    // Recover signing address, to bind entropy to signer
+    // Recover signing address and public key from signature
     const dataHashBytes = arrayify(e.digest);
     const ciphertextBytes = new TextEncoder().encode(e.ciphertext);
     const cidBytes = new TextEncoder().encode(this.getCurrentIPFSCid());
     const digest = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes, cidBytes])));
+
+    // Recover ETH address using verifyMessage
     const pkpEthAddress = verifyMessage(digest, e.sig);
+
+    // Recover public key from signature using recoverPublicKey
+    const pkpPublicKey = recoverPublicKey(digest, joinSignature(e.sig));
 
     const decrypted = await Lit.Actions.decryptAndCombine({
       accessControlConditions: this.litCidAccessControl(),
@@ -183,7 +216,7 @@ export class GhostContext {
       authSig: null,
       chain: 'ethereum'
     });
-    return this.setEntropy(decrypted, pkpEthAddress);
+    return this.setEntropy(decrypted, pkpEthAddress, pkpPublicKey);
   }
 
   async getManager() {

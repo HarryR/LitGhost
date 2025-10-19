@@ -35,7 +35,7 @@ describe('Test Server HTTP Handler', () => {
         .expect(200)
         .expect('Content-Type', /json/);
 
-      expect(response.body.success).toBe(true);
+      expect(response.body.ok).toBe(true);
       expect(response.body.data.echo).toBe('Hello from HTTP test!');
       expect(response.body.data.timestamp).toBeTypeOf('number');
     });
@@ -47,7 +47,7 @@ describe('Test Server HTTP Handler', () => {
         .send('invalid')
         .expect(200);
 
-      expect(response.body.success).toBe(false);
+      expect(response.body.ok).toBe(false);
       expect(response.body.error).toContain('ghostRequest must be an object');
     });
 
@@ -72,7 +72,7 @@ describe('Test Server HTTP Handler', () => {
         })
         .expect(200); // The action returns 200 with error in body
 
-      expect(response.body.success).toBe(false);
+      expect(response.body.ok).toBe(false);
       expect(response.body.error).toContain('message must be a string');
     });
 
@@ -87,7 +87,7 @@ describe('Test Server HTTP Handler', () => {
         })
         .expect(200);
 
-      expect(response.body.success).toBe(false);
+      expect(response.body.ok).toBe(false);
       expect(response.body.error).toContain('Unknown ghostRequest type');
     });
   });
@@ -142,7 +142,7 @@ describe('Test Server HTTP Handler', () => {
         .expect(200);
 
       // Should fail validation
-      expect(response.body.success).toBe(false);
+      expect(response.body.ok).toBe(false);
     });
 
     it('should handle array instead of object', async () => {

@@ -88,7 +88,7 @@ export async function createTestApp(options?: {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         return res.status(500).json({
-          success: false,
+          ok: false,
           error: result.error.message,
           details: result.error.stack,
         });
@@ -123,7 +123,7 @@ export async function createTestApp(options?: {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
       res.status(500).json({
-        success: false,
+        ok: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         details: error instanceof Error ? error.stack : String(error),
       });

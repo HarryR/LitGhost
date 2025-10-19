@@ -23,6 +23,7 @@ export const hexlify = globalEthers.utils.hexlify;
 export const toUtf8Bytes = globalEthers.utils.toUtf8Bytes;
 export const defaultAbiCoder = globalEthers.utils.defaultAbiCoder;
 export const SigningKey = globalEthers.utils.SigningKey;
+export const recoverPublicKey = globalEthers.utils.recoverPublicKey;
 export const randomBytes = globalEthers.utils.randomBytes;
 export const recoverAddress = globalEthers.utils.recoverAddress;
 export const joinSignature = globalEthers.utils.joinSignature;

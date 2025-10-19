@@ -1,4 +1,4 @@
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
 
 import { Contract } from '@ethersproject/contracts';
@@ -191,12 +191,24 @@ export function useTokenBalance(options: UseTokenBalanceOptions) {
     stopPolling()
   })
 
+  // Formatted balance with locale-specific formatting
+  const formattedBalance = computed(() => {
+    if (loading.value) return 'Loading...';
+    if (error.value) return 'Error loading balance';
+    if (balance.value === null) return '--';
+
+    // Format with browser's locale and 2 decimal places
+    const num = parseFloat(balance.value);
+    return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  });
+
   return {
     balance,
     decimals,
     symbol,
     loading,
     error,
+    formattedBalance,
     refresh: fetchBalance
   }
 }
