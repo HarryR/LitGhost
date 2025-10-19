@@ -137,6 +137,9 @@ importers:
       vite-plugin-singlefile:
         specifier: ^2.3.0
         version: 2.3.0(rollup@4.52.4)(vite@6.3.6(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0)(tsx@4.20.6))
+      vite-plugin-sri3:
+        specifier: ^1.1.0
+        version: 1.1.0(vite@6.3.6(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0)(tsx@4.20.6))
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.7.0)(@vitest/ui@3.2.4)(happy-dom@19.0.2)(jiti@2.6.1)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0)(tsx@4.20.6)
@@ -4613,6 +4616,12 @@ packages:
     peerDependencies:
       rollup: ^4.44.1
       vite: ^5.4.11 || ^6.0.0 || ^7.0.0
+
+  vite-plugin-sri3@1.1.0:
+    resolution: {integrity: sha512-YirrIphWhC1J4Nc9z8pjeQaUZD9mL4xvl4XKw1xr6rUJxIY6LJ0aFUOouCShFvsOQ5xk8usuK3SXxZyeaOFzFQ==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      vite: ^2 || ^3 || ^4 || ^5 || ^6 || ^7
 
   vite@5.4.20:
     resolution: {integrity: sha512-j3lYzGC3P+B5Yfy/pfKNgVEg4+UtcIJcVRt2cDjIOmhLourAqPqf8P7acgxeiSgUB7E3p2P8/3gNIgDLpwzs4g==}
@@ -10191,6 +10200,10 @@ snapshots:
     dependencies:
       micromatch: 4.0.8
       rollup: 4.52.4
+      vite: 6.3.6(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0)(tsx@4.20.6)
+
+  vite-plugin-sri3@1.1.0(vite@6.3.6(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0)(tsx@4.20.6)):
+    dependencies:
       vite: 6.3.6(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0)(tsx@4.20.6)
 
   vite@5.4.20(@types/node@24.7.0)(lightningcss@1.30.1)(stylus@0.57.0)(terser@5.44.0):

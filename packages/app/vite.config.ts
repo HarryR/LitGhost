@@ -1,6 +1,7 @@
 import { defineConfig, Plugin } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { sri } from 'vite-plugin-sri3'
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
@@ -46,7 +47,7 @@ function inlineCss(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss(), inlineCss(), visualizer()],
+  plugins: [vue(), tailwindcss(), inlineCss(), sri(), visualizer()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
