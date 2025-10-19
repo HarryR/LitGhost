@@ -8,7 +8,7 @@
  */
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext, hexlify, randomBytes, recoverPublicKey, joinSignature } from '@monorepo/core/sandboxed';
+import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext, hexlify, randomBytes, recoverPublicKey, recoverAddress, joinSignature } from '@monorepo/core/sandboxed';
 
 export interface EntropySig {
   v: number;
@@ -187,6 +187,13 @@ export class GhostContext {
     return this.#entropy;
   }
 
+  clearEntropy() {
+    this.#entropy = null;
+    this.#privateParams = null;
+    this.#pkpEthAddress = null;
+    this.#pkpPublicKey = null;
+  }
+
   async entropy (): Promise<Uint8Array>
   {
     if( this.#entropy !== null )
@@ -201,18 +208,23 @@ export class GhostContext {
     const dataHashBytes = arrayify(e.digest);
     const ciphertextBytes = new TextEncoder().encode(e.ciphertext);
     const cidBytes = new TextEncoder().encode(this.getCurrentIPFSCid());
-    const digest = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes, cidBytes])));
+    const digest = keccak256(concat([dataHashBytes, ciphertextBytes, cidBytes]));
 
-    // Recover ETH address using verifyMessage
-    const pkpEthAddress = verifyMessage(digest, e.sig);
+    // Recover ETH address and public key from the raw ECDSA signature
+    // Note: recoverAddress/recoverPublicKey expect the digest as hex string
+    const signature = joinSignature(e.sig);
+    const pkpEthAddress = recoverAddress(digest, signature);
+    let pkpPublicKey = recoverPublicKey(digest, signature);
 
-    // Recover public key from signature using recoverPublicKey
-    const pkpPublicKey = recoverPublicKey(digest, joinSignature(e.sig));
+    // Remove 0x prefix from public key if present (to match bootstrap format)
+    if (pkpPublicKey.startsWith('0x')) {
+      pkpPublicKey = pkpPublicKey.slice(2);
+    }
 
     const decrypted = await Lit.Actions.decryptAndCombine({
       accessControlConditions: this.litCidAccessControl(),
       ciphertext: e.ciphertext,
-      dataToEncryptHash: e.digest,
+      dataToEncryptHash: e.digest.startsWith('0x') ? e.digest.slice(2) : e.digest,
       authSig: null,
       chain: 'ethereum'
     });

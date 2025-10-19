@@ -33,7 +33,6 @@ export async function handleRequest(
       default: return { ok: false, error: `Unknown request type: ${(ghostRequest as any).type}` };
     }
   } catch (error) {
-    console.error('Error in handleRequest:', error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Unknown error',

@@ -177,6 +177,20 @@ export function validateBootstrapRequest(req: any): GhostRequestBootstrap {
 }
 
 /**
+ * Validate register-telegram request
+ * Throws descriptive errors if validation fails
+ */
+export function validateRegisterTelegramRequest(req: any): GhostRequestRegisterTelegram {
+  if (typeof req.initDataRaw !== 'string') {
+    throw new Error('initDataRaw must be a string');
+  }
+  if (req.initDataRaw.length === 0) {
+    throw new Error('initDataRaw cannot be empty');
+  }
+  return req as GhostRequestRegisterTelegram;
+}
+
+/**
  * Validate submit-deposit request
  * Throws descriptive errors if validation fails
  */
@@ -248,11 +262,15 @@ export function validateGhostRequest(value: unknown): GhostRequest {
     return validateBootstrapRequest(req);
   }
 
+  if (req.type === 'register-telegram') {
+    return validateRegisterTelegramRequest(req);
+  }
+
   if (req.type === 'submit-deposit') {
     return validateSubmitDepositRequest(req);
   }
 
-  throw new Error(`Unknown ghostRequest type: ${req.type}`);
+  throw new Error(`Cannot validate ghostRequest: unknown type '${req.type}'`);
 }
 
 /**

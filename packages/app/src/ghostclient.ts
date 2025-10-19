@@ -66,6 +66,14 @@ export class GhostClient implements IGhostClient {
     this.#wallet = null;
   }
 
+  async disconnect() {
+    if( this.#client ) {
+      this.#client.disconnect();
+      this.#client = null;
+      this.#sessionSigs = null;
+    }
+  }
+
   async connect(): Promise<void>
   {
     if( this.#sessionSigs === null )
@@ -76,7 +84,6 @@ export class GhostClient implements IGhostClient {
       });
       await c.connect();
       console.log('Lit connected to network', this.#network);
-
       this.#wallet = new Wallet(import.meta.env.VITE_LIT_APP_WALLET_SECRET);
       this.#sessionSigs = await getSessionSigsForAction(c, this.#wallet, import.meta.env.VITE_GHOST_IPFSCID);
       this.#client = c;

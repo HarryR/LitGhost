@@ -1,11 +1,27 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, watch, toRef } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useGhostClient } from './composables/useGhostClient'
+import { useTelegramRegistration } from './composables/useTelegramRegistration'
 import '@/vendor/telegram-web-app.d.ts'
 
-const count = ref(0)
+// GhostClient - auto-connects on mount
+const {
+  client: gc,
+  isLoading: gcLoading,
+  status: gcStatus
+} = useGhostClient({ debug: true });
+
+// Telegram registration - handles private key storage
+const {
+  privateKey,
+  isLoading: registrationLoading,
+  error: registrationError,
+  wasRegistered,
+  storageType,
+  register
+} = useTelegramRegistration(toRef(gc));
 
 const telegramUser = computed(() => {
   return window.Telegram.WebApp.initDataUnsafe.user || null;
@@ -14,19 +30,46 @@ const telegramUser = computed(() => {
 const hasUsername = computed(() => {
   return telegramUser.value && typeof telegramUser.value.username === 'string';
 });
+
+// Auto-register when ghost client is ready
+watch(gc, async (client) => {
+  if (client && hasUsername.value && !privateKey.value && !registrationLoading.value) {
+    await register();
+  }
+}, { immediate: true });
+
+// Show if we're waiting for ghost client or registration
+const isLoading = computed(() => gcLoading.value || registrationLoading.value);
+
+// Placeholder for PYUSD balance
+const pyusdBalance = computed(() => '0.00');
 </script>
 
 <template>
-  <div class="min-h-screen bg-background p-6">
-    <div class="max-w-4xl mx-auto pt-12 space-y-8">
-      <!-- Header -->
-      <header class="text-center mb-12">
-        <h1 class="text-5xl font-bold mb-3">
-          Telegram Mini App
-        </h1>
-        <p class="text-muted-foreground text-lg">Welcome to the app</p>
-      </header>
+  <div class="min-h-screen bg-background">
+    <!-- Top Bar -->
+    <div class="border-b border-border bg-card">
+      <div class="max-w-4xl mx-auto px-6 py-4">
+        <div class="flex items-center justify-between">
+          <!-- Logo -->
+          <div class="flex items-center gap-2">
+            <span class="text-3xl">🔥👻</span>
+          </div>
 
+          <!-- Lit Status -->
+          <Badge
+            variant="outline"
+            :class="[gcStatus.class, 'px-3 py-1.5 font-medium']"
+          >
+            <span class="w-2 h-2 rounded-full mr-2" :class="gcStatus.dotClass"></span>
+            {{ gcStatus.text }}
+          </Badge>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-4xl mx-auto px-6 py-8 space-y-6">
       <!-- Username Check Card -->
       <Card v-if="!hasUsername">
         <CardHeader>
@@ -63,44 +106,69 @@ const hasUsername = computed(() => {
         </CardContent>
       </Card>
 
-      <!-- Main App Content (only shown when username exists) -->
-      <template v-else>
-        <Card>
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle class="flex items-center gap-2">
-                <span class="text-3xl">👤</span>
-                User Info
-              </CardTitle>
-              <Badge variant="outline" class="border-emerald-400/50 text-emerald-400">
-                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse mr-2"></span>
-                Active
-              </Badge>
+      <!-- Loading/Error State (while waiting for GhostClient or registration) -->
+      <Card v-else-if="isLoading || registrationError">
+        <CardContent class="text-center py-8">
+          <!-- Error State -->
+          <template v-if="registrationError">
+            <div class="w-20 h-20 mt-8 mx-auto bg-destructive/10 rounded-full flex items-center justify-center text-4xl mb-4">
+              ❌
             </div>
-          </CardHeader>
-          <CardContent>
-            <div class="space-y-2">
-              <p class="text-sm text-muted-foreground">Username</p>
+            <h3 class="text-xl font-semibold mb-2">Login Failed</h3>
+            <p class="text-muted-foreground max-w-md mx-auto">
+              {{ registrationError }}
+            </p>
+          </template>
+
+          <!-- Loading State -->
+          <template v-else>
+            <div class="w-16 h-16 mt-8 mx-auto mb-4 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-muted-foreground">
+              {{ gcLoading ? 'Connecting to Lit Network...' : 'Logging In...' }}
+            </p>
+          </template>
+        </CardContent>
+      </Card>
+
+      <!-- User Info Section (only shown when username exists and registered) -->
+      <div v-else class="bg-card border border-border rounded-lg p-6">
+        <div class="space-y-4">
+          <!-- Username and Balance Row -->
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div class="flex-1">
+              <p class="text-sm text-muted-foreground mb-1">Username</p>
               <p class="font-mono text-lg">@{{ telegramUser?.username }}</p>
             </div>
-          </CardContent>
-        </Card>
-
-        <!-- Demo Counter -->
-        <Card>
-          <CardHeader>
-            <CardTitle class="text-center">Demo Counter</CardTitle>
-          </CardHeader>
-          <CardContent class="text-center space-y-4">
-            <div class="text-6xl font-bold">
-              {{ count }}
+            <div class="text-left sm:text-right">
+              <p class="text-sm text-muted-foreground mb-1">PYUSD Balance</p>
+              <p class="text-2xl font-bold">{{ pyusdBalance }} <span class="text-sm font-normal text-muted-foreground">PYUSD</span></p>
             </div>
-            <Button @click="count++" size="lg" class="w-full sm:w-auto">
-              Increment Counter
-            </Button>
-          </CardContent>
-        </Card>
-      </template>
+          </div>
+
+          <!-- Storage Status Row -->
+          <div class="pt-4 border-t border-border">
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+              <span class="text-muted-foreground">Status:</span>
+              <Badge variant="outline" class="gap-1">
+                <span v-if="wasRegistered">🆕 Newly Registered</span>
+                <span v-else>💾 Loaded from Storage</span>
+              </Badge>
+              <Badge v-if="storageType" variant="secondary" class="gap-1">
+                <span v-if="storageType === 'secure'">🔐 SecureStorage</span>
+                <span v-else-if="storageType === 'device'">📱 DeviceStorage</span>
+                <span v-else>❓ {{ storageType }}</span>
+              </Badge>
+              <Badge v-else variant="outline">⏳ Storage Unknown</Badge>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="text-center text-sm text-muted-foreground">
+        Made with 🤎 @ ETH Global Online 2025
+      </div>
     </div>
+
   </div>
 </template>

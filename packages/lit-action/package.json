@@ -25,7 +25,7 @@
     "exp:11": "tsx scripts/experiments/11-deterministic-schnorr-signing.ts",
     "exp:12": "tsx scripts/experiments/12-mint-pkp-v8.ts",
     "exp:13": "tsx scripts/experiments/13-bootstrap-mint-and-execute.ts",
-    "bootstrap:dev": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode development --output bootstrap-development.json"
+    "bootstrap:dev": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode development --output bootstrap-development.json --debug"
   },
   "devDependencies": {
     "@lit-protocol/auth-helpers": "7.3.0",

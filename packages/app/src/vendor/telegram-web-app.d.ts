@@ -126,6 +126,12 @@ export interface SecureStorage {
   removeItem(key: string, callback?: (error: string | null) => void): void;
 }
 
+export interface DeviceStorage {
+  setItem(key: string, value: string, callback?: (error: string | null) => void): void;
+  getItem(key: string, callback: (error: string | null, value: string | null) => void): void;
+  removeItem(key: string, callback?: (error: string | null) => void): void;
+}
+
 export interface PopupParams {
   title?: string;
   message: string;
@@ -160,6 +166,7 @@ export interface TelegramWebApp {
   CloudStorage: CloudStorage;
   BiometricManager: BiometricManager;
   SecureStorage: SecureStorage;
+  DeviceStorage: DeviceStorage;
 
   isVersionAtLeast(version: string): boolean;
   setHeaderColor(color: 'bg_color' | 'secondary_bg_color' | string): void;

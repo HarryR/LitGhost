@@ -51,6 +51,61 @@ export async function handleBootstrap(request: GhostRequestBootstrap, ctx: Ghost
     }
   );
 
+  // Clear entropy and reload from chain to verify everything matches
+  ctx.clearEntropy();
+
+  // Fetch on-chain entropy FIRST (before attempting to decrypt)
+  const onChainEntropy = await ctx.ghost.getEntropy() as Entropy;
+
+  // Verify on-chain data matches what we sent (before attempting decrypt)
+  const ciphertextMatches = onChainEntropy.ciphertext === encryptResult.ciphertext;
+  const digestMatches = onChainEntropy.digest === ('0x' + encryptResult.dataToEncryptHash);
+  const cidMatches = onChainEntropy.ipfsCid === currentCid;
+  const sigVMatches = onChainEntropy.sig.v === signature.v;
+  const sigRMatches = onChainEntropy.sig.r === signature.r;
+  const sigSMatches = onChainEntropy.sig.s === signature.s;
+  const teeEncPublicKeyOnChainMatches = onChainEntropy.teeEncPublicKey === teeEncPublicKey;
+
+  if (!ciphertextMatches) {
+    throw new Error('Verification failed: ciphertext mismatch');
+  }
+  if (!digestMatches) {
+    throw new Error('Verification failed: digest mismatch');
+  }
+  if (!cidMatches) {
+    throw new Error('Verification failed: ipfsCid mismatch');
+  }
+  if (!sigVMatches || !sigRMatches || !sigSMatches) {
+    throw new Error('Verification failed: signature mismatch');
+  }
+  if (!teeEncPublicKeyOnChainMatches) {
+    throw new Error('Verification failed: teeEncPublicKey mismatch');
+  }
+  // NOW attempt to decrypt and reload entropy
+  let reloadedEntropy: Uint8Array;
+  let reloadedPrivateParams: any;
+  let reloadedTeeEncPublicKey: string;
+
+  try {
+    reloadedEntropy = await ctx.entropy();
+    reloadedPrivateParams = await ctx.getPrivateParams();
+    const reloadedManager = await ctx.getManager();
+    reloadedTeeEncPublicKey = hexlify(reloadedManager.teePublicKey);
+
+    // Verify all reloaded values match
+    const pkpPublicKeyMatches = ctx.pkpPublicKey === request.pkpPublicKey;
+    const pkpEthAddressMatches = ctx.pkpEthAddress === request.pkpEthAddress;
+    const teeEncPublicKeyReloadMatches = reloadedTeeEncPublicKey === teeEncPublicKey;
+    const tgApiSecretMatches = reloadedPrivateParams.tgApiSecret === request.tgApiSecret;
+
+    if (!pkpPublicKeyMatches) throw new Error('Verification failed: pkpPublicKey mismatch after reload');
+    if (!pkpEthAddressMatches) throw new Error('Verification failed: pkpEthAddress mismatch after reload');
+    if (!teeEncPublicKeyReloadMatches) throw new Error('Verification failed: teeEncPublicKey mismatch after reload');
+    if (!tgApiSecretMatches) throw new Error('Verification failed: tgApiSecret mismatch after reload');
+  } catch (error) {
+    throw new Error('Failed to decrypt and reload entropy: ' + (error as any)?.message);
+  }
+
   return {
     ok: true,
     data: {
@@ -111,15 +166,18 @@ async function sendSetEntropyTransaction(
   // Serialize the signed transaction
   const signedTx = ethers.utils.serializeTransaction(tx, signature);
 
-  // Broadcast the transaction
-  const txResponse = await ctx.provider.sendTransaction(signedTx);
+  // Compute the final transaction hash that will be returned by the network
+  const finalTxHash = keccak256(signedTx);
 
-  console.log('setEntropy transaction sent:', txResponse.hash);
+  // Broadcast the transaction in runOnce to prevent "already known" errors
+  // Only one node should broadcast, but all nodes know the tx hash
+  await Lit.Actions.runOnce({ waitForResponse: true, name: "send-setEntropy-tx" }, async () => {
+    const txResponse = await ctx.provider.sendTransaction(signedTx);
+    return txResponse.hash;
+  });
 
-  // Wait for confirmation
-  await txResponse.wait();
+  // All nodes wait for confirmation (using the computed hash)
+  await ctx.provider.waitForTransaction(finalTxHash);
 
-  console.log('setEntropy transaction confirmed!');
-
-  return txResponse.hash;
+  return finalTxHash;
 }

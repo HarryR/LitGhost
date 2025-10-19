@@ -57,6 +57,7 @@ export {
   randomBytes,
   verifyMessage,
   recoverPublicKey,
+  recoverAddress,
   joinSignature
 } from './ethers-compat';
 

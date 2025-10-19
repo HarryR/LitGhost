@@ -82,7 +82,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Inline tiny chunks like the Vue export helper
-        //experimentalMinChunkSize: 1024*6
+        experimentalMinChunkSize: 1024*6
       }
     }    
   },

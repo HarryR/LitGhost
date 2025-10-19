@@ -24,6 +24,7 @@ export class GhostClientError extends Error {
  * Interface for GhostClient - allows for type-safe usage without loading heavy Lit Protocol dependencies
  */
 export interface IGhostClient {
+  disconnect(): Promise<void>;
   connect(): Promise<void>;
   call<T extends GhostRequest>(request: T): Promise<GhostResponseDataMap[T['type']]>;
 

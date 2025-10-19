@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useWallet } from './composables/useWallet'
 import { useTokenBalance } from './composables/useTokenBalance'
+import { useGhostClient } from './composables/useGhostClient'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,36 +17,19 @@ import {
 } from '@/components/ui/alert-dialog'
 import { LitGhost } from '@monorepo/core';
 import TransferWidget from './components/TransferWidget.vue';
-import type { IGhostClient } from './ighostclient';
 
 const { address, chainId, connected, connecting, connect, switchChain, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
-const gc = shallowRef<IGhostClient | null>(null);
-const gcConnecting = ref(false);
-const gcError = ref(false);
-const gcLoading = ref(true);
+
+// GhostClient - auto-connects on mount
+const {
+  client: gc,
+  isLoading: gcLoading,
+  status: gcStatus
+} = useGhostClient({ debug: true });
 
 // Auto-connect to wallet if already authorized
 onMounted(() => {
   checkExistingConnection();
-
-  // Load GhostClient in background without blocking initial render
-  import('./ghostclient')
-    .then(async ({ GhostClient }) => {
-      const x = new GhostClient(true);
-      gcConnecting.value = true;
-      await x.connect();
-      gc.value = x;
-      gcError.value = false;
-      console.log('GhostClient ready');
-    })
-    .catch(err => {
-      console.error('Failed to load GhostClient:', err);
-      gcError.value = true;
-    })
-    .finally(() => {
-      gcLoading.value = false;
-      gcConnecting.value = false;
-    });
 });
 
 // Expected chain ID from environment
@@ -142,7 +126,7 @@ async function handleConnect() {
   }
 }
 
-function handleSwitchToSepolia() {
+function doSwitchToCorrectNetwork() {
   // Convert decimal chain ID to hex
   const chainIdHex = '0x' + expectedChainId.toString(16);
   switchChain(chainIdHex);
@@ -171,20 +155,6 @@ const connectionStatus = computed(() => {
   return { variant: 'outline', text: correctChainName, class: 'border-emerald-400 text-emerald-400 bg-emerald-400/10' };
 });
 
-// Lit (GhostClient) status
-const litStatus = computed(() => {
-  if (gcError.value) {
-    return { text: 'Lit', dotClass: 'bg-red-500', class: 'border-red-500 text-red-500 bg-red-500/10' };
-  }
-  if (gc.value) {
-    return { text: 'Lit', dotClass: 'bg-emerald-400', class: 'border-emerald-400 text-emerald-400 bg-emerald-400/10' };
-  }
-  if (gcConnecting.value) {
-    return { text: 'Lit', dotClass: 'bg-yellow-500', class: 'border-yellow-500 text-yellow-500 bg-yellow-500/10' };
-  }
-  // gcLoading or initial state
-  return { text: 'Lit', dotClass: 'bg-gray-500', class: 'border-gray-500 text-gray-500 bg-gray-500/10' };
-});
 </script>
 
 <template>
@@ -208,9 +178,9 @@ const litStatus = computed(() => {
                 'px-3 py-1.5 font-medium transition-all',
                 { 'cursor-pointer hover:opacity-80': connected && !isCorrectNetwork() }
               ]"
-              @click="connected && !isCorrectNetwork() && handleSwitchToSepolia()"
+              @click="connected && !isCorrectNetwork() && doSwitchToCorrectNetwork()"
             >
-              <span v-if="connected" class="w-2 h-2 rounded-full mr-2 animate-pulse" :class="isCorrectNetwork() ? 'bg-emerald-400' : 'bg-yellow-500'"></span>
+              <span v-if="connected" class="w-2 h-2 rounded-full mr-2" :class="isCorrectNetwork() ? 'bg-emerald-400' : 'bg-yellow-500'"></span>
               <span v-else class="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
               {{ connectionStatus.text }}
             </Badge>
@@ -218,10 +188,10 @@ const litStatus = computed(() => {
             <!-- Lit Status -->
             <Badge
               variant="outline"
-              :class="[litStatus.class, 'px-3 py-1.5 font-medium']"
+              :class="[gcStatus.class, 'px-3 py-1.5 font-medium']"
             >
-              <span class="w-2 h-2 rounded-full mr-2" :class="[litStatus.dotClass, { 'animate-pulse': gcConnecting || gc }]"></span>
-              {{ litStatus.text }}
+              <span class="w-2 h-2 rounded-full mr-2" :class="gcStatus.dotClass"></span>
+              {{ gcStatus.text }}
             </Badge>
           </div>
         </div>
@@ -292,7 +262,7 @@ const litStatus = computed(() => {
                 ⚠️ Please switch to {{ correctChainName }}
               </p>
             </div>
-            <Button @click="handleSwitchToSepolia" class="w-full" size="lg">
+            <Button @click="doSwitchToCorrectNetwork" class="w-full" size="lg">
               Switch to {{ correctChainName }}
             </Button>
           </div>
@@ -325,7 +295,12 @@ const litStatus = computed(() => {
         @error="handleTransferError"
         @success="handleTransferSuccess"
       />
-    </div>
+
+      <!-- Footer -->
+      <div class="text-center text-sm text-muted-foreground">
+        Made with 🤎 @ ETH Global Online 2025
+      </div>
+    </div>    
 
     <!-- Error Dialog -->
     <AlertDialog v-model:open="showErrorDialog">
