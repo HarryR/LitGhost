@@ -26,6 +26,7 @@
     "@monorepo/lit-action": "workspace:*",
     "@noble/ed25519": "^3.0.0",
     "lucide-vue-next": "^0.545.0",
+    "qrcode-vue3": "^1.7.1",
     "reka-ui": "^2.5.1",
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.13"

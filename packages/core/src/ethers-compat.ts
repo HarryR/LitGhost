@@ -12,7 +12,7 @@ export { toUtf8Bytes } from '@ethersproject/strings';
 export { defaultAbiCoder } from '@ethersproject/abi';
 export { SigningKey, recoverPublicKey } from '@ethersproject/signing-key';
 export { randomBytes } from '@ethersproject/random';
-export { recoverAddress } from '@ethersproject/transactions';
+export { recoverAddress, serialize as serializeTransaction } from '@ethersproject/transactions';
 export { Contract } from '@ethersproject/contracts';
 export { JsonRpcProvider } from '@ethersproject/providers';
 export { verifyMessage } from '@ethersproject/wallet';

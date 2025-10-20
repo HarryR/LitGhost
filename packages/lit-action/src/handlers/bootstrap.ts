@@ -151,33 +151,6 @@ async function sendSetEntropyTransaction(
     type: 2,
   };
 
-  // Serialize the transaction for signing (without signature)
-  const ethers = (globalThis as any).ethers;
-  const unsignedTx = ethers.utils.serializeTransaction(tx);
-  const txHash = keccak256(unsignedTx);
-
-  // Sign the transaction hash with the PKP
-  const signature = litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
-    toSign: arrayify(txHash),
-    publicKey: pkpPublicKey,
-    sigName: 'setEntropy-tx-sig',
-  }));
-
-  // Serialize the signed transaction
-  const signedTx = ethers.utils.serializeTransaction(tx, signature);
-
-  // Compute the final transaction hash that will be returned by the network
-  const finalTxHash = keccak256(signedTx);
-
-  // Broadcast the transaction in runOnce to prevent "already known" errors
-  // Only one node should broadcast, but all nodes know the tx hash
-  await Lit.Actions.runOnce({ waitForResponse: true, name: "send-setEntropy-tx" }, async () => {
-    const txResponse = await ctx.provider.sendTransaction(signedTx);
-    return txResponse.hash;
-  });
-
-  // All nodes wait for confirmation (using the computed hash)
-  await ctx.provider.waitForTransaction(finalTxHash);
-
-  return finalTxHash;
+  const txReceipt = await ctx.signAndSendTx(pkpPublicKey, tx);
+  return txReceipt.transactionHash;
 }

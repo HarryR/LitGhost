@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed, watch, toRef } from 'vue'
+import { computed, watch, toRef, ref } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { useGhostClient } from './composables/useGhostClient'
 import { useTelegramRegistration } from './composables/useTelegramRegistration'
+import PrivateBalanceManager from './components/PrivateBalanceManager.vue'
+import Qrcode from 'qrcode-vue3'
 import '@/vendor/telegram-web-app.d.ts'
 
 // GhostClient - auto-connects on mount
@@ -20,8 +29,59 @@ const {
   error: registrationError,
   wasRegistered,
   storageType,
-  register
+  register,
+  clearStorage
 } = useTelegramRegistration(toRef(gc));
+
+const isClearingStorage = ref(false);
+async function handleClearStorage() {
+  isClearingStorage.value = true;
+  try {
+    await clearStorage();
+  } finally {
+    isClearingStorage.value = false;
+  }
+}
+
+// Export Private Key functionality
+const isPrivateKeyExported = ref(false);
+const isCopied = ref(false);
+
+function handleExportPrivateKey() {
+  isPrivateKeyExported.value = true;
+}
+
+const formattedPrivateKey = computed(() => {
+  if (!privateKey.value) return '';
+  // Remove 0x prefix if present
+  const hex = privateKey.value.startsWith('0x') ? privateKey.value.slice(2) : privateKey.value;
+  // Split into 2-byte (4 character) chunks
+  const chunks = hex.match(/.{1,4}/g) || [];
+  return chunks.join(' ');
+});
+
+// Generate QR code URL with secret in hash parameter
+const qrCodeUrl = computed(() => {
+  if (!privateKey.value) return '';
+  // Get the current page URL without query string and hash
+  const baseUrl = window.location.origin + window.location.pathname;
+  // Add the secret key as a hash parameter
+  return `${baseUrl}#sk=${privateKey.value}`;
+});
+
+async function copyToClipboard() {
+  if (privateKey.value) {
+    try {
+      await navigator.clipboard.writeText(privateKey.value);
+      isCopied.value = true;
+      setTimeout(() => {
+        isCopied.value = false;
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  }
+}
 
 const telegramUser = computed(() => {
   return window.Telegram.WebApp.initDataUnsafe.user || null;
@@ -130,38 +190,132 @@ const pyusdBalance = computed(() => '0.00');
         </CardContent>
       </Card>
 
-      <!-- User Info Section (only shown when username exists and registered) -->
-      <div v-else class="bg-card border border-border rounded-lg p-6">
-        <div class="space-y-4">
-          <!-- Username and Balance Row -->
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div class="flex-1">
-              <p class="text-sm text-muted-foreground mb-1">Username</p>
-              <p class="font-mono text-lg">@{{ telegramUser?.username }}</p>
-            </div>
-            <div class="text-left sm:text-right">
-              <p class="text-sm text-muted-foreground mb-1">PYUSD Balance</p>
-              <p class="text-2xl font-bold">{{ pyusdBalance }} <span class="text-sm font-normal text-muted-foreground">PYUSD</span></p>
-            </div>
-          </div>
+      <!-- Private Balance Manager -->
+      <PrivateBalanceManager
+        v-if="!isLoading"
+        :ghost-client="gc"
+        :private-key="privateKey"
+      />
 
-          <!-- Storage Status Row -->
-          <div class="pt-4 border-t border-border">
-            <div class="flex flex-wrap items-center gap-2 text-sm">
-              <span class="text-muted-foreground">Status:</span>
-              <Badge variant="outline" class="gap-1">
-                <span v-if="wasRegistered">🆕 Newly Registered</span>
-                <span v-else>💾 Loaded from Storage</span>
-              </Badge>
-              <Badge v-if="storageType" variant="secondary" class="gap-1">
-                <span v-if="storageType === 'secure'">🔐 SecureStorage</span>
-                <span v-else-if="storageType === 'device'">📱 DeviceStorage</span>
-                <span v-else>❓ {{ storageType }}</span>
-              </Badge>
-              <Badge v-else variant="outline">⏳ Storage Unknown</Badge>
-            </div>
-          </div>
-        </div>
+      <!-- FAQ & Utilities Accordion (only shown when registered) -->
+      <div v-if="privateKey && !isLoading">
+        <Accordion type="single" collapsible class="w-full">
+          <AccordionItem value="export-key">
+            <AccordionTrigger class="text-left">
+              <span class="font-medium">Export LitGhost Secret</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div class="space-y-4 pt-2">
+                <p class="text-sm text-muted-foreground">
+                  You can export and backup your LitGhost Secret from the Telegram Mini App, and import it into the Web App in a browser.
+                </p>
+
+                <!-- Export Button or Copy Button -->
+                <div v-if="!isPrivateKeyExported">
+                  <Button
+                    variant="destructive"
+                    class="w-full"
+                    @click="handleExportPrivateKey"
+                  >
+                    Export LitGhost Secret
+                  </Button>
+                </div>
+                <div v-else>
+                  <Button
+                    variant="destructive"
+                    class="w-full"
+                    @click="copyToClipboard"
+                  >
+                    <span v-if="isCopied">✓ Copied to Clipboard</span>
+                    <span v-else>📋 Copy to Clipboard</span>
+                  </Button>
+                </div>
+
+                <!-- Private Key Display (shown after export) -->
+                <div v-if="isPrivateKeyExported" class="space-y-4">
+                  <p class="text-xs text-muted-foreground text-center">
+                    ⚠️ Keep your LitGhost secret secure and never share it with anyone.
+                  </p>
+
+                  <!-- Hex Display -->
+                  <div class="bg-muted rounded-md p-3">
+                    <p class="font-mono text-xs text-foreground text-center leading-relaxed">
+                      {{ formattedPrivateKey }}
+                    </p>
+                  </div>                  
+
+                  <!-- QR Code -->
+                  <p class="text-xs text-muted-foreground text-center">
+                    Or, scan this QR code with your phone to open the Web App with your secret pre-loaded
+                  </p>      
+
+                  <div class="bg-white rounded-md p-4 flex justify-center">
+                    <Qrcode
+                      :value="qrCodeUrl"
+                      :size="200"
+                      level="H"
+                      render-as="svg"
+                      :dots-options="{
+                        color: '#000',
+                        type: 'square'
+                      }"
+                    />
+                  </div>                            
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <!-- Storage Management (Debug) -->
+          <AccordionItem value="storage-management">
+            <AccordionTrigger class="text-left">
+              <span class="font-medium">Storage Management (Debug)</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div class="space-y-4 pt-2">
+                <p class="text-sm text-muted-foreground">
+                  Manage your stored private key and view storage status. Useful for debugging.
+                </p>
+
+                <!-- Storage Status -->
+                <div class="bg-muted rounded-md p-4 space-y-3">
+                  <div class="flex items-center gap-2 text-sm">
+                    <span class="text-muted-foreground">Registration Status:</span>
+                    <Badge variant="outline" class="gap-1">
+                      <span v-if="wasRegistered">🆕 Newly Registered</span>
+                      <span v-else>💾 Loaded from Storage</span>
+                    </Badge>
+                  </div>
+                  <div class="flex items-center gap-2 text-sm">
+                    <span class="text-muted-foreground">Storage Type:</span>
+                    <Badge v-if="storageType" variant="secondary" class="gap-1">
+                      <span v-if="storageType === 'secure'">🔐 SecureStorage</span>
+                      <span v-else-if="storageType === 'device'">📱 DeviceStorage</span>
+                      <span v-else>❓ {{ storageType }}</span>
+                    </Badge>
+                    <Badge v-else variant="outline">⏳ Storage Unknown</Badge>
+                  </div>
+                </div>
+
+                <!-- Clear Storage Button -->
+                <div class="space-y-2">
+                  <Button
+                    variant="destructive"
+                    class="w-full"
+                    @click="handleClearStorage"
+                    :disabled="isClearingStorage"
+                  >
+                    <span v-if="isClearingStorage">🔄 Clearing...</span>
+                    <span v-else>🗑️ Clear Storage</span>
+                  </Button>
+                  <p class="text-xs text-muted-foreground">
+                    ⚠️ This will delete your stored private key. You can login again any any time by opening the app again.
+                  </p>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
 
       <!-- Footer -->

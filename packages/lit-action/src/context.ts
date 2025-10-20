@@ -8,7 +8,7 @@
  */
 
 import './lit-interfaces'; // Import to ensure global type definitions are loaded
-import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, verifyMessage, namespacedHmac, ManagerContext, hexlify, randomBytes, recoverPublicKey, recoverAddress, joinSignature } from '@monorepo/core/sandboxed';
+import { JsonRpcProvider, Contract, LitGhost, Token, arrayify, keccak256, concat, namespacedHmac, ManagerContext, hexlify, randomBytes, recoverPublicKey, recoverAddress, joinSignature, serializeTransaction } from '@monorepo/core/sandboxed';
 
 export interface EntropySig {
   v: number;
@@ -80,6 +80,18 @@ export class GhostContext {
     this.provider = new JsonRpcProvider(rpcUrl);
     this.ghost = LitGhost.connect(this.provider).attach(ghostAddress);
     this.token = Token.connect(this.provider).attach(tokenAddress);
+  }
+
+  /**
+  * Convert Lit ECDSA signature format to Ethereum signature format
+  */
+  litEcdsaSigToEthSig(sig: string): { v: number; r: string; s: string } {
+    const sigObj = JSON.parse(sig) as { v: number; r: string; s: string };
+    return {
+      v: sigObj.v + 27,
+      r: '0x' + sigObj.r.slice(2),  // Lit returns SECG prefixed compressed public key! So 0x02 or 0x03 prefix
+      s: '0x' + sigObj.s
+    };
   }
 
   litCidAccessControl(cid?:string) {
@@ -229,6 +241,33 @@ export class GhostContext {
       chain: 'ethereum'
     });
     return this.setEntropy(decrypted, pkpEthAddress, pkpPublicKey);
+  }
+
+  async signAndSendTx(pkpPublicKey:string, tx:any) {
+    const unsignedTx = serializeTransaction(tx);
+    const txHash = keccak256(unsignedTx);
+    const txSig = this.litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
+      toSign: arrayify(txHash),
+      publicKey: pkpPublicKey,
+      sigName: `sig-${txHash}`,
+    }));
+    return await this.sendSignedTx(txSig, tx);
+  }
+
+  async sendSignedTx(signature:EntropySig, tx:any)
+  {
+    const signedTx = serializeTransaction(tx, signature);
+    const finalTxHash = keccak256(signedTx);
+
+    // Broadcast the transaction in runOnce to prevent "already known" errors
+    // Only one node should broadcast, but all nodes know the tx hash
+    await Lit.Actions.runOnce({ waitForResponse: true, name: `tx-${finalTxHash}` }, async () => {
+      const txResponse = await this.provider.sendTransaction(signedTx);
+      return txResponse.hash;
+    });
+
+    // All nodes wait for confirmation (using the computed hash)
+    return await this.provider.waitForTransaction(finalTxHash);
   }
 
   async getManager() {

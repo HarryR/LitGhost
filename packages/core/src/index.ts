@@ -58,7 +58,8 @@ export {
   verifyMessage,
   recoverPublicKey,
   recoverAddress,
-  joinSignature
+  joinSignature,
+  serializeTransaction
 } from './ethers-compat';
 
 // Manager utilities

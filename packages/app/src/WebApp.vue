@@ -3,9 +3,17 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useWallet } from './composables/useWallet'
 import { useTokenBalance } from './composables/useTokenBalance'
 import { useGhostClient } from './composables/useGhostClient'
+import { useSecretImport } from './composables/useSecretImport'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,8 +25,33 @@ import {
 } from '@/components/ui/alert-dialog'
 import { LitGhost } from '@monorepo/core';
 import TransferWidget from './components/TransferWidget.vue';
+import PrivateBalanceManager from './components/PrivateBalanceManager.vue';
 
 const { address, chainId, connected, connecting, connect, switchChain, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
+
+// Secret import for LitGhost
+const {
+  privateKey: litGhostSecret,
+  isLoading: secretLoading,
+  error: secretError,
+  importSecret,
+  logout: logoutSecret,
+  checkUrlHash
+} = useSecretImport();
+
+const secretInput = ref('');
+
+function handleImportSecret() {
+  const success = importSecret(secretInput.value);
+  if (success) {
+    secretInput.value = ''; // Clear input on success
+  }
+}
+
+function handleLogout() {
+  logoutSecret();
+  secretInput.value = '';
+}
 
 // GhostClient - auto-connects on mount
 const {
@@ -28,8 +61,12 @@ const {
 } = useGhostClient({ debug: true });
 
 // Auto-connect to wallet if already authorized
+// Also check URL hash for secret key
 onMounted(() => {
   checkExistingConnection();
+
+  // Check if there's a secret key in the URL hash and auto-import it
+  checkUrlHash();
 });
 
 // Expected chain ID from environment
@@ -296,11 +333,87 @@ const connectionStatus = computed(() => {
         @success="handleTransferSuccess"
       />
 
+      <!-- Private Balance Manager -->
+      <PrivateBalanceManager
+        :ghost-client="gc"
+        :private-key="litGhostSecret"
+      />
+
+      <!-- Login with Secret Accordion -->
+      <div>
+        <Accordion type="single" collapsible class="w-full">
+          <AccordionItem value="login-secret">
+            <AccordionTrigger class="text-left">
+              <div class="flex items-center justify-between w-full pr-4">
+                <span class="font-medium">Login with LitGhost Secret</span>
+                <Badge v-if="litGhostSecret" variant="default" class="ml-2">
+                  Logged In
+                </Badge>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div class="space-y-4 pt-2">
+                <!-- Not logged in state -->
+                <div v-if="!litGhostSecret">
+                  <p class="text-sm text-muted-foreground mb-4">
+                    Paste your LitGhost secret (exported from the Telegram Mini App) to view and manage your private balance.
+                  </p>
+
+                  <div class="space-y-3">
+                    <Textarea
+                      v-model="secretInput"
+                      placeholder="Paste your private key here (with or without 0x prefix, spaces allowed)"
+                      class="font-mono text-xs min-h-[100px]"
+                      :disabled="secretLoading"
+                    />
+
+                    <!-- Error message -->
+                    <p v-if="secretError" class="text-xs text-destructive">
+                      {{ secretError }}
+                    </p>
+
+                    <Button
+                      @click="handleImportSecret"
+                      :disabled="secretLoading || !secretInput.trim()"
+                      class="w-full"
+                    >
+                      <span v-if="secretLoading">Importing...</span>
+                      <span v-else>Import Secret</span>
+                    </Button>
+                  </div>
+                </div>
+
+                <!-- Logged in state -->
+                <div v-else class="space-y-3">
+                  <div class="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-4">
+                    <p class="text-sm text-emerald-700 dark:text-emerald-400 font-medium">
+                      ✓ LitGhost secret imported successfully
+                    </p>
+                  </div>
+
+                  <Button
+                    @click="handleLogout"
+                    variant="outline"
+                    class="w-full"
+                  >
+                    Logout (Clear Secret)
+                  </Button>
+
+                  <p class="text-xs text-muted-foreground text-center">
+                    Your secret is only stored in memory and will be cleared when you close this tab.
+                  </p>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
+
       <!-- Footer -->
       <div class="text-center text-sm text-muted-foreground">
         Made with 🤎 @ ETH Global Online 2025
       </div>
-    </div>    
+    </div>
 
     <!-- Error Dialog -->
     <AlertDialog v-model:open="showErrorDialog">

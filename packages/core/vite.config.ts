@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
           '@ethersproject/signing-key',
           '@ethersproject/contracts',
           '@ethersproject/providers',
+          '@ethersproject/transactions',
           '@ethersproject/strings',
           '@ethersproject/wallet',
           "@noble/ed25519"

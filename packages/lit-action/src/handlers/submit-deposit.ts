@@ -1,18 +1,6 @@
 import { GhostRequestSubmitDeposit, GhostResponse, SubmitDepositResponseData } from '../params';
 import { type GhostContext } from '../context';
-import { arrayify, keccak256, hexlify } from '@monorepo/core/sandboxed';
-
-/**
- * Convert Lit ECDSA signature format to Ethereum signature format
- */
-function litEcdsaSigToEthSig(sig: string): { v: number; r: string; s: string } {
-  const sigObj = JSON.parse(sig) as { v: number; r: string; s: string };
-  return {
-    v: sigObj.v + 27,
-    r: '0x' + sigObj.r.slice(2),  // Lit returns SECG prefixed compressed public key! So 0x02 or 0x03 prefix
-    s: '0x' + sigObj.s
-  };
-}
+import { hexlify } from '@monorepo/core/sandboxed';
 
 /**
  * Handle submit-deposit request - submits ERC-3009 deposit transaction and processes it
@@ -109,24 +97,11 @@ export async function handleSubmitDeposit(
       type: 2,
     };
 
-    // Step 4: Sign and submit deposit transaction
-    const ethers = (globalThis as any).ethers;
-    const unsignedDepositTx = ethers.utils.serializeTransaction(depositTx);
-    const depositTxHash = keccak256(unsignedDepositTx);
-
-    const depositSignature = litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
-      toSign: arrayify(depositTxHash),
-      publicKey: pkpPublicKey,
-      sigName: 'deposit-tx-sig',
-    }));
-
-    const signedDepositTx = ethers.utils.serializeTransaction(depositTx, depositSignature);
-    const depositTxResponse = await ctx.provider.sendTransaction(signedDepositTx);
-
-    console.log('Deposit transaction sent:', depositTxResponse.hash);
+    const depositTxReceipt = await ctx.signAndSendTx(pkpPublicKey, depositTx);
+    
+    console.log('Deposit transaction sent:', depositTxReceipt.transactionHash);
 
     // Wait for deposit confirmation
-    await depositTxResponse.wait();
     console.log('Deposit transaction confirmed!');
 
     // Step 5: Run manager.step() with 10s time budget to process the deposit
@@ -143,12 +118,29 @@ export async function handleSubmitDeposit(
     const transcript = await manager.computeTranscriptForBatch(batch);
 
     // Encode doUpdate call for gas estimation
-    const updateCallData = ctx.ghost.interface.encodeFunctionData('doUpdate', [batch, transcript]);
+    const updateCallData = ctx.ghost.interface.encodeFunctionData('doUpdate', [
+      batch.opStart,
+      batch.opCount,
+      batch.nextBlock,
+      batch.updates,
+      batch.newUsers,
+      batch.payouts,
+      transcript
+    ]);
 
     // Estimate gas for update transaction
-    const estimatedUpdateGas = await ctx.ghost.estimateGas.doUpdate(batch, transcript, {
-      from: pkpEthAddress
-    });
+    const estimatedUpdateGas = await ctx.ghost.estimateGas.doUpdate(
+      batch.opStart,
+      batch.opCount,
+      batch.nextBlock,
+      batch.updates,
+      batch.newUsers,
+      batch.payouts,
+      transcript,
+      {
+        from: pkpEthAddress
+      }
+    );
 
     // Add 20% buffer to gas estimate
     const updateGasLimit = estimatedUpdateGas.mul(120).div(100);
@@ -187,30 +179,13 @@ export async function handleSubmitDeposit(
       type: 2,
     };
 
-    // Sign and submit update transaction
-    const unsignedUpdateTx = ethers.utils.serializeTransaction(updateTx);
-    const updateTxHash = keccak256(unsignedUpdateTx);
-
-    const updateSignature = litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
-      toSign: arrayify(updateTxHash),
-      publicKey: pkpPublicKey,
-      sigName: 'update-tx-sig',
-    }));
-
-    const signedUpdateTx = ethers.utils.serializeTransaction(updateTx, updateSignature);
-    const updateTxResponse = await ctx.provider.sendTransaction(signedUpdateTx);
-
-    console.log('Update transaction sent:', updateTxResponse.hash);
-
-    // Wait for update confirmation
-    await updateTxResponse.wait();
-    console.log('Update transaction confirmed!');
+    const updateReceipt = await ctx.signAndSendTx(pkpPublicKey, updateTx);
 
     return {
       ok: true,
       data: {
-        depositTxHash: depositTxResponse.hash,
-        updateTxHash: updateTxResponse.hash,
+        depositTxHash: depositTxReceipt.transactionHash,
+        updateTxHash: updateReceipt.transactionHash,
       },
     };
 
