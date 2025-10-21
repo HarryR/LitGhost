@@ -203,7 +203,7 @@ describe("LitGhost Contract", function () {
       };
 
       // Deposit using ERC3009 - only the LitGhost contract (receiver) can call this
-      const tx = await lg.connect(user2)['depositERC3009((bytes32,bytes32),(address,uint256,uint256,uint256,(uint8,bytes32,bytes32)))'](depositToSol, auth);
+      const tx = await lg.connect(user2).depositERC3009(depositToSol, auth);
       await tx.wait();
 
       // Verify deposit succeeded

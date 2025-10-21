@@ -437,7 +437,8 @@ async function main() {
     }
 
     // Construct RPC URL for the target chain
-    const targetRpcUrl = `https://1rpc.io/${chainName}`;
+    //const targetRpcUrl = `https://1rpc.io/${chainName}`;
+    const targetRpcUrl = 'https://eth-sepolia.g.alchemy.com/v2/1dq4pK-IgZJa_PKOUoYS_';
     console.log('  Target Chain:', chainName);
     console.log('  LitGhost Address:', litGhostAddress);
 

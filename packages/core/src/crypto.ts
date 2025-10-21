@@ -169,7 +169,9 @@ export function decryptBalance(
   nonce: number
 ): number {
   const decryptionKey = namespacedHmac(sharedSecret, NAMESPACE_BALANCE, encodeUint32(nonce));
-  return decodeUint32(xorBytes(encryptedBalance, decryptionKey.slice(0, 4)));
+  const xorMask = decryptionKey.slice(0, 4);
+  const result = decodeUint32(xorBytes(encryptedBalance, xorMask));
+  return result;
 }
 
 /**

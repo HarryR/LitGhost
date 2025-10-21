@@ -264,7 +264,7 @@
         "type": "uint256"
       }
     ],
-    "name": "depositERC3009",
+    "name": "depositERC3009WithIncentive",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -508,6 +508,19 @@
         "internalType": "struct Leaf[]",
         "name": "leaves",
         "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getOwner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",

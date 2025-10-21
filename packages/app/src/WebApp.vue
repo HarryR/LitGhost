@@ -94,11 +94,11 @@ const teePublicKey = ref<string | null>(null);
 watch(litGhostContract, async (contract) => {
   if (contract) {
     try {
-      const pubKey = await contract.getTeePublicKey();
-      teePublicKey.value = pubKey;
+      const entropy = await contract.getEntropy();
+      teePublicKey.value = entropy.teeEncPublicKey;
     } catch (error) {
       console.error('Failed to fetch TEE public key:', error);
-      errorMessage.value = 'Failed to fetch TEE public key from contract';
+      errorMessage.value = 'Failed to fetch TEE public key from contract. Make sure the contract is bootstrapped.';
       showErrorDialog.value = true;
     }
   } else {
@@ -183,13 +183,17 @@ const truncatedAddress = computed(() => {
 
 // Connection status variant and text
 const connectionStatus = computed(() => {
+  // Check if no Web3 provider is available
+  if (!hasWeb3Provider.value) {
+    return { variant: 'secondary', text: 'No Web3', class: 'border-gray-500 text-gray-500 bg-gray-500/10', dotClass: 'bg-gray-500' };
+  }
   if (!connected.value) {
-    return { variant: 'destructive', text: 'Not Connected', class: 'border-red-500 text-red-500 bg-red-500/10' };
+    return { variant: 'destructive', text: 'Connect', class: 'border-orange-500 text-orange-500 bg-orange-500/10', dotClass: 'bg-orange-500' };
   }
   if (!isCorrectNetwork()) {
-    return { variant: 'default', text: `Wrong Network`, class: 'border-yellow-500 text-yellow-500 bg-yellow-500/10' };
+    return { variant: 'default', text: `Wrong Network`, class: 'border-yellow-500 text-yellow-500 bg-yellow-500/10', dotClass: 'bg-yellow-500' };
   }
-  return { variant: 'outline', text: correctChainName, class: 'border-emerald-400 text-emerald-400 bg-emerald-400/10' };
+  return { variant: 'outline', text: correctChainName, class: 'border-emerald-400 text-emerald-400 bg-emerald-400/10', dotClass: 'bg-emerald-400' };
 });
 
 </script>
@@ -217,8 +221,7 @@ const connectionStatus = computed(() => {
               ]"
               @click="connected && !isCorrectNetwork() && doSwitchToCorrectNetwork()"
             >
-              <span v-if="connected" class="w-2 h-2 rounded-full mr-2" :class="isCorrectNetwork() ? 'bg-emerald-400' : 'bg-yellow-500'"></span>
-              <span v-else class="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+              <span class="w-2 h-2 rounded-full mr-2" :class="connectionStatus.dotClass"></span>
               {{ connectionStatus.text }}
             </Badge>
 
@@ -333,76 +336,88 @@ const connectionStatus = computed(() => {
         @success="handleTransferSuccess"
       />
 
-      <!-- Private Balance Manager -->
+      <!-- Private Balance Login Card (when not logged in) -->
+      <Card v-if="!litGhostSecret">
+        <CardHeader>
+          <CardTitle class="flex items-center gap-2">
+            <span class="text-3xl">🔐</span>
+            Private Balance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div class="space-y-4">
+            <p class="text-sm text-muted-foreground">
+              Login with your LitGhost secret (exported from the Telegram Mini App) to view and manage your private balance.
+            </p>
+
+            <div class="space-y-3">
+              <Textarea
+                v-model="secretInput"
+                placeholder="Paste your private key here (with or without 0x prefix, spaces allowed)"
+                class="font-mono text-xs min-h-[100px]"
+                :disabled="secretLoading"
+              />
+
+              <!-- Error message -->
+              <p v-if="secretError" class="text-xs text-destructive">
+                {{ secretError }}
+              </p>
+
+              <Button
+                @click="handleImportSecret"
+                :disabled="secretLoading || !secretInput.trim()"
+                class="w-full"
+                size="lg"
+              >
+                <span v-if="secretLoading">Importing...</span>
+                <span v-else>Login</span>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- Private Balance Manager (when logged in) -->
       <PrivateBalanceManager
+        v-if="litGhostSecret"
         :ghost-client="gc"
         :private-key="litGhostSecret"
+        :provider="provider"
+        :lit-ghost-contract="litGhostContract"
+        :tee-public-key="teePublicKey"
       />
 
-      <!-- Login with Secret Accordion -->
-      <div>
+      <!-- LitGhost Account Accordion (only when logged in) -->
+      <div v-if="litGhostSecret">
         <Accordion type="single" collapsible class="w-full">
-          <AccordionItem value="login-secret">
+          <AccordionItem value="account">
             <AccordionTrigger class="text-left">
               <div class="flex items-center justify-between w-full pr-4">
-                <span class="font-medium">Login with LitGhost Secret</span>
-                <Badge v-if="litGhostSecret" variant="default" class="ml-2">
+                <span class="font-medium">LitGhost Account</span>
+                <Badge variant="default" class="ml-2">
                   Logged In
                 </Badge>
               </div>
             </AccordionTrigger>
             <AccordionContent>
               <div class="space-y-4 pt-2">
-                <!-- Not logged in state -->
-                <div v-if="!litGhostSecret">
-                  <p class="text-sm text-muted-foreground mb-4">
-                    Paste your LitGhost secret (exported from the Telegram Mini App) to view and manage your private balance.
-                  </p>
-
-                  <div class="space-y-3">
-                    <Textarea
-                      v-model="secretInput"
-                      placeholder="Paste your private key here (with or without 0x prefix, spaces allowed)"
-                      class="font-mono text-xs min-h-[100px]"
-                      :disabled="secretLoading"
-                    />
-
-                    <!-- Error message -->
-                    <p v-if="secretError" class="text-xs text-destructive">
-                      {{ secretError }}
-                    </p>
-
-                    <Button
-                      @click="handleImportSecret"
-                      :disabled="secretLoading || !secretInput.trim()"
-                      class="w-full"
-                    >
-                      <span v-if="secretLoading">Importing...</span>
-                      <span v-else>Import Secret</span>
-                    </Button>
-                  </div>
-                </div>
-
-                <!-- Logged in state -->
-                <div v-else class="space-y-3">
-                  <div class="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-4">
-                    <p class="text-sm text-emerald-700 dark:text-emerald-400 font-medium">
-                      ✓ LitGhost secret imported successfully
-                    </p>
-                  </div>
-
-                  <Button
-                    @click="handleLogout"
-                    variant="outline"
-                    class="w-full"
-                  >
-                    Logout (Clear Secret)
-                  </Button>
-
-                  <p class="text-xs text-muted-foreground text-center">
-                    Your secret is only stored in memory and will be cleared when you close this tab.
+                <div class="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-4">
+                  <p class="text-sm text-emerald-700 dark:text-emerald-400 font-medium">
+                    ✓ LitGhost secret imported successfully
                   </p>
                 </div>
+
+                <Button
+                  @click="handleLogout"
+                  variant="outline"
+                  class="w-full"
+                >
+                  Logout (Clear Secret)
+                </Button>
+
+                <p class="text-xs text-muted-foreground text-center">
+                  Your secret is only stored in memory and will be cleared when you close this tab.
+                </p>
               </div>
             </AccordionContent>
           </AccordionItem>

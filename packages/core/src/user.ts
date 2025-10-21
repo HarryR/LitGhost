@@ -1,4 +1,4 @@
-import { arrayify, Contract } from './ethers-compat.js';
+import { arrayify, Contract, hexlify } from './ethers-compat.js';
 import {
   getUserLeafInfo,
   decryptLeafBalance,
@@ -50,21 +50,25 @@ export class UserClient {
   /**
    * Get the user's index from the blockchain
    * Cached after first call
+   * Returns null if user is not registered on-chain yet
    */
-  async getUserIndex(): Promise<number> {
+  async getUserIndex(): Promise<number | null> {
     if (this.userIndex !== null) {
       return this.userIndex;
     }
 
-    const userPublicKeyHex = '0x' + Buffer.from(this.userPublicKey).toString('hex');
+    const userPublicKeyHex = hexlify(this.userPublicKey);
     const userIndices = await this.contract.getUserLeaves([userPublicKeyHex]);
     // Handle both BigNumber and plain number returns
     const firstIndex = userIndices[0];
-    this.userIndex = Number(firstIndex);
+    const index = Number(firstIndex);
 
-    if (this.userIndex === 0) {
-      throw new Error('User not registered on-chain yet');
+    if (index === 0) {
+      // User not registered on-chain yet
+      return null;
     }
+
+    this.userIndex = index;
 
     // Calculate and cache leaf info
     const leafInfo = getUserLeafInfo(this.userIndex);
@@ -127,15 +131,22 @@ export class UserClient {
   private decryptBalance(leaf: Leaf): number {
     const position = this.position!;
     const sharedSecret = computeSharedSecret(this.userPrivateKey, this.teePublicKey);
-    return decryptLeafBalance(leaf, position, sharedSecret);
+    const decryptedBalance = decryptLeafBalance(leaf, position, sharedSecret);
+    return decryptedBalance;
   }
 
   /**
    * Get the user's current balance from the blockchain
+   * Returns 0 if user is not registered on-chain yet
    */
   async getBalance(): Promise<number> {
     // Ensure user index and leaf info are cached
-    await this.getUserIndex();
+    const userIndex = await this.getUserIndex();
+
+    // User not registered yet, balance is 0
+    if (userIndex === null) {
+      return 0;
+    }
 
     const leafIdx = this.leafIdx!;
     const leaves = await this.contract.getLeaves([leafIdx]);
@@ -146,6 +157,14 @@ export class UserClient {
     };
 
     return this.decryptBalance(leaf);
+  }
+
+  /**
+   * Check if user is registered on-chain
+   */
+  async isRegistered(): Promise<boolean> {
+    const userIndex = await this.getUserIndex();
+    return userIndex !== null;
   }
 
   /**

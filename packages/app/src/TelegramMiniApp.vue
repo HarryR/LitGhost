@@ -12,8 +12,24 @@ import {
 import { useGhostClient } from './composables/useGhostClient'
 import { useTelegramRegistration } from './composables/useTelegramRegistration'
 import PrivateBalanceManager from './components/PrivateBalanceManager.vue'
-import Qrcode from 'qrcode-vue3'
+import QRCode from 'qrcode'
 import '@/vendor/telegram-web-app.d.ts'
+import { JsonRpcProvider } from '@ethersproject/providers'
+import { LitGhost } from '@monorepo/core'
+
+// Create RPC provider for reading blockchain data
+const rpcProvider = new JsonRpcProvider(import.meta.env.VITE_RPC_URL)
+
+// Create read-only LitGhost contract instance
+const litGhostContract = LitGhost.attach(import.meta.env.VITE_CONTRACT_LITGHOST).connect(rpcProvider)
+
+// Fetch TEE public key from contract
+const teePublicKey = ref<string | null>(null)
+litGhostContract.getEntropy().then((entropy: any) => {
+  teePublicKey.value = entropy.teeEncPublicKey
+}).catch((error: Error) => {
+  console.error('Failed to fetch TEE public key:', error)
+})
 
 // GhostClient - auto-connects on mount
 const {
@@ -46,9 +62,23 @@ async function handleClearStorage() {
 // Export Private Key functionality
 const isPrivateKeyExported = ref(false);
 const isCopied = ref(false);
+const qrCodeDataUrl = ref<string>('');
 
-function handleExportPrivateKey() {
+async function handleExportPrivateKey() {
   isPrivateKeyExported.value = true;
+
+  // Generate QR code data URL
+  if (qrCodeUrl.value) {
+    try {
+      qrCodeDataUrl.value = await QRCode.toDataURL(qrCodeUrl.value, {
+        errorCorrectionLevel: 'H',
+        width: 200,
+        margin: 2,
+      });
+    } catch (err) {
+      console.error('Failed to generate QR code:', err);
+    }
+  }
 }
 
 const formattedPrivateKey = computed(() => {
@@ -100,9 +130,6 @@ watch(gc, async (client) => {
 
 // Show if we're waiting for ghost client or registration
 const isLoading = computed(() => gcLoading.value || registrationLoading.value);
-
-// Placeholder for PYUSD balance
-const pyusdBalance = computed(() => '0.00');
 </script>
 
 <template>
@@ -195,6 +222,9 @@ const pyusdBalance = computed(() => '0.00');
         v-if="!isLoading"
         :ghost-client="gc"
         :private-key="privateKey"
+        :provider="rpcProvider"
+        :lit-ghost-contract="litGhostContract"
+        :tee-public-key="teePublicKey"
       />
 
       <!-- FAQ & Utilities Accordion (only shown when registered) -->
@@ -206,10 +236,6 @@ const pyusdBalance = computed(() => '0.00');
             </AccordionTrigger>
             <AccordionContent>
               <div class="space-y-4 pt-2">
-                <p class="text-sm text-muted-foreground">
-                  You can export and backup your LitGhost Secret from the Telegram Mini App, and import it into the Web App in a browser.
-                </p>
-
                 <!-- Export Button or Copy Button -->
                 <div v-if="!isPrivateKeyExported">
                   <Button
@@ -245,22 +271,15 @@ const pyusdBalance = computed(() => '0.00');
                   </div>                  
 
                   <!-- QR Code -->
-                  <p class="text-xs text-muted-foreground text-center">
-                    Or, scan this QR code with your phone to open the Web App with your secret pre-loaded
-                  </p>      
+                  <div v-if="qrCodeDataUrl">
+                    <p class="text-xs text-muted-foreground text-center">
+                      Or, scan this QR code with your phone to <a :href="qrCodeUrl" target="_blank" class="underline">open the Web App with your secret pre-loaded</a>
+                    </p>
 
-                  <div class="bg-white rounded-md p-4 flex justify-center">
-                    <Qrcode
-                      :value="qrCodeUrl"
-                      :size="200"
-                      level="H"
-                      render-as="svg"
-                      :dots-options="{
-                        color: '#000',
-                        type: 'square'
-                      }"
-                    />
-                  </div>                            
+                    <div class="bg-white rounded-md p-4 mt-4 flex justify-center">
+                      <img :src="qrCodeDataUrl" alt="QR Code" class="w-[200px] h-[200px]" />
+                    </div>
+                  </div>         
                 </div>
               </div>
             </AccordionContent>

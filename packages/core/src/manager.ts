@@ -1,4 +1,4 @@
-import { arrayify, Contract, keccak256, SigningKey } from './ethers-compat.js';
+import { arrayify, concat, Contract, keccak256, SigningKey, toUtf8Bytes } from './ethers-compat.js';
 import {
   decryptDepositTo,
   getUserLeafInfo,
@@ -86,11 +86,8 @@ export class ManagerContext {
   ): [Set<number>, Uint8Array] {
     const chaffLeaves = new Set<number>();
 
-    // Base data for hashing: chaffSecret + opStart + opCount    
-    let chaffSecret = namespacedHmac(this.teeMasterKey, NAMESPACE_CHAFF, Buffer.concat([
-      Buffer.from(opStart.toString()),
-      Buffer.from(opCount.toString())
-    ]));
+    // Base data for hashing: chaffSecret + opStart + opCount
+    let chaffSecret = namespacedHmac(this.teeMasterKey, NAMESPACE_CHAFF, toUtf8Bytes(`${opStart}|${opCount}`));
 
     // If there are no leaves or no real updates, no chaff needed
     if (totalLeafCount === 0 || realLeafIndices.size === 0) {
@@ -616,9 +613,13 @@ export class ManagerContext {
 
     // Randomize leaf order for additional privacy (deterministic shuffle based on opStart)
     const shuffled = Array.from(allLeafIndices).sort((a, b) => {
-      const hashA = arrayify(keccak256(Buffer.concat([chaffSecret, Buffer.from(a.toString())])));
-      const hashB = arrayify(keccak256(Buffer.concat([chaffSecret, Buffer.from(b.toString())])));
-      return Buffer.compare(hashA, hashB);
+      const hashA = arrayify(keccak256(concat([chaffSecret, toUtf8Bytes(a.toString())])));
+      const hashB = arrayify(keccak256(concat([chaffSecret, toUtf8Bytes(b.toString())])));
+      // Compare byte arrays lexicographically
+      for (let i = 0; i < hashA.length; i++) {
+        if (hashA[i] !== hashB[i]) return hashA[i] - hashB[i];
+      }
+      return 0;
     });
 
     return shuffled;

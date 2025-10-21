@@ -50,6 +50,11 @@ task("deploy", "Deploys the LitGhost contract")
   .setAction(async (taskArgs, hre) => {
     const { ethers, run, network } = hre;
 
+    // Compile contracts first to ensure we're deploying the latest version
+    console.log('Compiling contracts...');
+    await run('compile');
+    console.log('Compilation complete.\n');
+
     console.log(`Deploying LitGhost contract to ${network.name}...`);
 
     const tokenAddress = taskArgs.token;

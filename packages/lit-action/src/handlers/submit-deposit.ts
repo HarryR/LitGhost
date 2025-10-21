@@ -47,9 +47,12 @@ export async function handleSubmitDeposit(
     };
 
     // Step 2: Estimate gas for deposit transaction
-    const estimatedDepositGas = await ctx.ghost.estimateGas['depositERC3009(DepositTo,Auth3009)'](
+    const estimatedDepositGas = await ctx.ghost.estimateGas.depositERC3009(
       depositToSol,
-      auth3009Sol
+      auth3009Sol,
+      {
+        from: pkpEthAddress
+      }
     );
 
     // Add 20% buffer to gas estimate
@@ -77,7 +80,7 @@ export async function handleSubmitDeposit(
 
     // Step 3: Encode the depositERC3009 call data
     const depositCallData = ctx.ghost.interface.encodeFunctionData(
-      'depositERC3009(DepositTo,Auth3009)',
+      'depositERC3009',
       [depositToSol, auth3009Sol]
     );
 

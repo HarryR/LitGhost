@@ -110,6 +110,14 @@ contract LitGhost {
         // TODO: in production, only allow entropy to be set once!
 
         m_entropy = in_entropy;
+
+        m_owner = msg.sender;
+    }
+
+    function getOwner()
+        public view returns (address)
+    {
+        return m_owner;
     }
 
     function getEntropy()
@@ -301,12 +309,12 @@ contract LitGhost {
     function depositERC3009(DepositTo calldata to, Auth3009 calldata auth)
         public
     {
-        depositERC3009(to, auth, 0);
+        depositERC3009WithIncentive(to, auth, 0);
     }
 
     // See `blindUserId` in packages/core/src/crypto.ts to get DepositTo
     // callerIncentive lets MEV bots deposit for you
-    function depositERC3009(DepositTo calldata to, Auth3009 calldata auth, uint256 callerIncentive)
+    function depositERC3009WithIncentive(DepositTo calldata to, Auth3009 calldata auth, uint256 callerIncentive)
         public
     {
         require( (auth.value - callerIncentive) > 0, "400!" );
@@ -341,7 +349,7 @@ contract LitGhost {
 
         for( uint i = 0; i < n; i++ )
         {
-            depositERC3009(to[i], auth[i], callerIncentive[i]);
+            depositERC3009WithIncentive(to[i], auth[i], callerIncentive[i]);
         }
     }
     
