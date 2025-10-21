@@ -66,6 +66,30 @@ export interface SubmitDepositResponseData {
   updateTxHash: string;
 }
 
+/**
+ * Single operation within a transfer-withdraw request
+ */
+export interface TransferWithdrawOperation {
+  fromTelegramUsername: string;     // User initiating operation
+  balanceLeafNonce: number;          // For replay protection
+  operationType: 'transfer' | 'withdraw';
+  destination: string;               // Telegram username OR ethereum address
+  amountCents: number;               // Amount in cents (2 decimals)
+  signature: {                       // Signature over all operation fields
+    v: number;
+    r: string;
+    s: string;
+  };
+}
+
+/**
+ * Response data for transfer-withdraw handler
+ */
+export interface TransferWithdrawResponseData {
+  updateTxHash: string;
+  skippedOperations?: Array<{index: number, reason: string}>;
+}
+
 // ============================================================================
 // Type map linking request types to their response data types
 // ============================================================================
@@ -75,6 +99,7 @@ export interface GhostResponseDataMap {
   'bootstrap': BootstrapResponseData;
   'register-telegram': RegisterTelegramResponseData;
   'submit-deposit': SubmitDepositResponseData;
+  'transfer-withdraw': TransferWithdrawResponseData;
 }
 
 /**
@@ -142,10 +167,19 @@ export interface GhostRequestSubmitDeposit {
 }
 
 /**
+ * Transfer/withdraw request - processes internal transfers or withdrawals with signature verification
+ * Each operation is independently signed by the user
+ */
+export interface GhostRequestTransferWithdraw {
+  type: 'transfer-withdraw';
+  operations: TransferWithdrawOperation[]; // 1-10 operations
+}
+
+/**
  * Discriminated union of all possible ghost request types
  * Add new request types here as you build functionality
  */
-export type GhostRequest = GhostRequestEcho | GhostRequestBootstrap | GhostRequestRegisterTelegram | GhostRequestSubmitDeposit;
+export type GhostRequest = GhostRequestEcho | GhostRequestBootstrap | GhostRequestRegisterTelegram | GhostRequestSubmitDeposit | GhostRequestTransferWithdraw;
 
 // ============================================================================
 // Request Type Validators
@@ -234,6 +268,54 @@ export function validateSubmitDepositRequest(req: any): GhostRequestSubmitDeposi
   return req as GhostRequestSubmitDeposit;
 }
 
+/**
+ * Validate transfer-withdraw request
+ * Throws descriptive errors if validation fails
+ */
+export function validateTransferWithdrawRequest(req: any): GhostRequestTransferWithdraw {
+  if (!req.operations || !Array.isArray(req.operations)) {
+    throw new Error('operations must be an array');
+  }
+  if (req.operations.length === 0 || req.operations.length > 10) {
+    throw new Error('operations must contain 1-10 items');
+  }
+
+  for (let i = 0; i < req.operations.length; i++) {
+    const op = req.operations[i];
+    const prefix = `operations[${i}]`;
+
+    if (typeof op.fromTelegramUsername !== 'string' || op.fromTelegramUsername.length === 0) {
+      throw new Error(`${prefix}.fromTelegramUsername must be a non-empty string`);
+    }
+    if (typeof op.balanceLeafNonce !== 'number' || op.balanceLeafNonce < 0 || !Number.isInteger(op.balanceLeafNonce)) {
+      throw new Error(`${prefix}.balanceLeafNonce must be a non-negative integer`);
+    }
+    if (op.operationType !== 'transfer' && op.operationType !== 'withdraw') {
+      throw new Error(`${prefix}.operationType must be 'transfer' or 'withdraw'`);
+    }
+    if (typeof op.destination !== 'string' || op.destination.length === 0) {
+      throw new Error(`${prefix}.destination must be a non-empty string`);
+    }
+    if (typeof op.amountCents !== 'number' || op.amountCents <= 0 || !Number.isInteger(op.amountCents)) {
+      throw new Error(`${prefix}.amountCents must be a positive integer`);
+    }
+    if (!op.signature || typeof op.signature !== 'object') {
+      throw new Error(`${prefix}.signature must be an object`);
+    }
+    if (typeof op.signature.v !== 'number') {
+      throw new Error(`${prefix}.signature.v must be a number`);
+    }
+    if (typeof op.signature.r !== 'string' || !op.signature.r.startsWith('0x')) {
+      throw new Error(`${prefix}.signature.r must be a 0x-prefixed hex string`);
+    }
+    if (typeof op.signature.s !== 'string' || !op.signature.s.startsWith('0x')) {
+      throw new Error(`${prefix}.signature.s must be a 0x-prefixed hex string`);
+    }
+  }
+
+  return req as GhostRequestTransferWithdraw;
+}
+
 // ============================================================================
 // Main Validation Functions
 // ============================================================================
@@ -268,6 +350,10 @@ export function validateGhostRequest(value: unknown): GhostRequest {
 
   if (req.type === 'submit-deposit') {
     return validateSubmitDepositRequest(req);
+  }
+
+  if (req.type === 'transfer-withdraw') {
+    return validateTransferWithdrawRequest(req);
   }
 
   throw new Error(`Cannot validate ghostRequest: unknown type '${req.type}'`);

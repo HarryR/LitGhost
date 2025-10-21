@@ -4,13 +4,14 @@
  */
 
 import '../lit-interfaces'; // Import to ensure global type definitions are loaded
-import { type JsParams, GhostRequestEcho, GhostRequestBootstrap, GhostRequestRegisterTelegram, GhostRequestSubmitDeposit, GhostResponse } from '../params';
+import { type JsParams, GhostRequestEcho, GhostRequestBootstrap, GhostRequestRegisterTelegram, GhostRequestSubmitDeposit, GhostRequestTransferWithdraw, GhostResponse } from '../params';
 import type { GhostContext } from '../context';
 
 import { handleBootstrap } from './bootstrap';
 import { handleEcho } from './echo';
 import { handleRegisterTelegram } from './register-telegram';
 import { handleSubmitDeposit } from './submit-deposit';
+import { handleTransferWithdraw } from './transfer-withdraw';
 
 /**
  * Main request handler
@@ -30,6 +31,7 @@ export async function handleRequest(
       case 'bootstrap': return await handleBootstrap(ghostRequest as GhostRequestBootstrap, ctx);
       case 'register-telegram': return await handleRegisterTelegram(ghostRequest as GhostRequestRegisterTelegram, ctx);
       case 'submit-deposit': return await handleSubmitDeposit(ghostRequest as GhostRequestSubmitDeposit, ctx);
+      case 'transfer-withdraw': return await handleTransferWithdraw(ghostRequest as GhostRequestTransferWithdraw, ctx);
       default: return { ok: false, error: `Unknown request type: ${(ghostRequest as any).type}` };
     }
   } catch (error) {

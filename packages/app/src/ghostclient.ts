@@ -6,6 +6,7 @@ import {
   GhostRequest,
   GhostResponse,
   GhostResponseDataMap,
+  TransferWithdrawOperation,
 } from '@monorepo/lit-action/params';
 
 import { Wallet } from '@ethersproject/wallet';
@@ -158,6 +159,13 @@ export class GhostClient implements IGhostClient {
       type: 'submit-deposit',
       depositTo: params.depositTo,
       auth3009: params.auth3009,
+    });
+  }
+
+  async transferWithdraw(operations: TransferWithdrawOperation[]) {
+    return this.call({
+      type: 'transfer-withdraw',
+      operations,
     });
   }
 }

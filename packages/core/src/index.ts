@@ -59,7 +59,8 @@ export {
   recoverPublicKey,
   recoverAddress,
   joinSignature,
-  serializeTransaction
+  serializeTransaction,
+  defaultAbiCoder
 } from './ethers-compat';
 
 // Manager utilities

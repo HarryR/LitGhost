@@ -31,6 +31,7 @@ const { address, chainId, connected, connecting, connect, switchChain, provider,
 
 // Secret import for LitGhost
 const {
+  username: litGhostUsername,
   privateKey: litGhostSecret,
   isLoading: secretLoading,
   error: secretError,
@@ -346,14 +347,10 @@ const connectionStatus = computed(() => {
         </CardHeader>
         <CardContent>
           <div class="space-y-4">
-            <p class="text-sm text-muted-foreground">
-              Login with your LitGhost secret (exported from the Telegram Mini App) to view and manage your private balance.
-            </p>
-
             <div class="space-y-3">
               <Textarea
                 v-model="secretInput"
-                placeholder="Paste your private key here (with or without 0x prefix, spaces allowed)"
+                placeholder="Paste your username & secret here, exported / copied from the LitGhost Telegram Mini App"
                 class="font-mono text-xs min-h-[100px]"
                 :disabled="secretLoading"
               />
@@ -382,6 +379,7 @@ const connectionStatus = computed(() => {
         v-if="litGhostSecret"
         :ghost-client="gc"
         :private-key="litGhostSecret"
+        :username="litGhostUsername"
         :provider="provider"
         :lit-ghost-contract="litGhostContract"
         :tee-public-key="teePublicKey"

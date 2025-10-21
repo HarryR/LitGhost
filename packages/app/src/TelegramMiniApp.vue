@@ -82,27 +82,30 @@ async function handleExportPrivateKey() {
 }
 
 const formattedPrivateKey = computed(() => {
-  if (!privateKey.value) return '';
-  // Remove 0x prefix if present
+  if (!privateKey.value || !telegramUser.value?.username) return '';
+  // Format: username:\n0x... (with spaces every 4 hex chars)
   const hex = privateKey.value.startsWith('0x') ? privateKey.value.slice(2) : privateKey.value;
   // Split into 2-byte (4 character) chunks
   const chunks = hex.match(/.{1,4}/g) || [];
-  return chunks.join(' ');
+  const formattedHex = chunks.join(' ');
+  return `${telegramUser.value.username}:\n${formattedHex}`;
 });
 
 // Generate QR code URL with secret in hash parameter
 const qrCodeUrl = computed(() => {
-  if (!privateKey.value) return '';
+  if (!privateKey.value || !telegramUser.value?.username) return '';
   // Get the current page URL without query string and hash
   const baseUrl = window.location.origin + window.location.pathname;
-  // Add the secret key as a hash parameter
-  return `${baseUrl}#sk=${privateKey.value}`;
+  // Add the secret key as a hash parameter with username (format: sk=username:privatekey)
+  return `${baseUrl}#sk=${telegramUser.value.username}:${privateKey.value}`;
 });
 
 async function copyToClipboard() {
-  if (privateKey.value) {
+  if (privateKey.value && telegramUser.value?.username) {
     try {
-      await navigator.clipboard.writeText(privateKey.value);
+      // Copy in the format: username:privatekey
+      const textToCopy = `${telegramUser.value.username}:${privateKey.value}`;
+      await navigator.clipboard.writeText(textToCopy);
       isCopied.value = true;
       setTimeout(() => {
         isCopied.value = false;
@@ -219,16 +222,17 @@ const isLoading = computed(() => gcLoading.value || registrationLoading.value);
 
       <!-- Private Balance Manager -->
       <PrivateBalanceManager
-        v-if="!isLoading"
+        v-if="!isLoading && hasUsername"
         :ghost-client="gc"
         :private-key="privateKey"
+        :username="telegramUser!.username!"
         :provider="rpcProvider"
         :lit-ghost-contract="litGhostContract"
         :tee-public-key="teePublicKey"
       />
 
-      <!-- FAQ & Utilities Accordion (only shown when registered) -->
-      <div v-if="privateKey && !isLoading">
+      <!-- FAQ & Utilities Accordion (only shown when registered and has username) -->
+      <div v-if="privateKey && !isLoading && hasUsername">
         <Accordion type="single" collapsible class="w-full">
           <AccordionItem value="export-key">
             <AccordionTrigger class="text-left">

@@ -9,11 +9,14 @@ import EthereumAddressInput from './inputs/EthereumAddressInput.vue'
 import type { IGhostClient } from '../ighostclient'
 import { Wallet } from '@ethersproject/wallet'
 import { UserClient } from '@monorepo/core'
-import { arrayify } from '@ethersproject/bytes'
+import { arrayify, splitSignature } from '@ethersproject/bytes'
+import { keccak256 } from '@ethersproject/solidity'
+import type { TransferWithdrawOperation } from '@monorepo/lit-action/params'
 
 interface Props {
   ghostClient: IGhostClient | null
   privateKey: string | null
+  username: string | null
   provider: any
   litGhostContract: any
   teePublicKey: string | null
@@ -48,6 +51,9 @@ const errorMessage = ref<string>('')
 const processedAmount = ref<string>('')
 const processedDestination = ref<string>('')
 const newBalance = ref<string | null>(null)
+
+// Processing status tracking
+const processingStatus = ref<string>('')
 
 // Template refs for auto-focus
 const usernameInputRef = ref<InstanceType<typeof TelegramUsernameInput> | null>(null)
@@ -179,6 +185,39 @@ const destination = computed(() => {
   return actionType.value === 'internal' ? cleanedUsername.value : withdrawAddress.value
 })
 
+// Create signed operation for transfer/withdraw
+async function createSignedOperation(
+  fromUsername: string,
+  privateKey: string,
+  nonce: number,
+  operationType: 'transfer' | 'withdraw',
+  destination: string,
+  amountCents: number
+): Promise<TransferWithdrawOperation> {
+  // Create wallet from private key
+  const wallet = new Wallet(privateKey)
+
+  // Construct message digest for signature
+  // Message format: hash(fromTelegramUsername, nonce, operationType, destination, amountCents)
+  const messageHash = keccak256(
+    ['string', 'uint256', 'string', 'string', 'uint256'],
+    [fromUsername, nonce, operationType, destination, amountCents]
+  )
+
+  // Sign the message
+  const signature = await wallet.signMessage(arrayify(messageHash))
+  const { v, r, s } = splitSignature(signature)
+
+  return {
+    fromTelegramUsername: fromUsername,
+    balanceLeafNonce: nonce,
+    operationType,
+    destination,
+    amountCents,
+    signature: { v, r, s }
+  }
+}
+
 // Form validation - check if all required fields are filled
 // The actual validation is handled by the input components
 const isFormValid = computed(() => {
@@ -215,27 +254,65 @@ async function setActionType(type: ActionType) {
 
 // Handle form submission
 async function handleSend() {
-  if (!isFormValid.value || !props.ghostClient || !props.privateKey) return
+  if (!isFormValid.value || !props.ghostClient || !props.privateKey || !props.username) return
 
   viewState.value = 'processing'
   processedAmount.value = amount.value
   processedDestination.value = destination.value
 
   try {
-    // TODO: Call Lit Action to process transfer/withdrawal
-    // const result = await props.ghostClient.processStep({
-    //   privateKey: props.privateKey,
-    //   actionType: actionType.value,
-    //   destination: destination.value,
-    //   amount: amount.value
-    // })
+    processingStatus.value = 'Preparing transaction...'
 
-    // Placeholder for testing - simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // Get current balance nonce from contract
+    const userWallet = new Wallet(props.privateKey)
+    const userPublicKey = arrayify('0x' + userWallet._signingKey().compressedPublicKey.slice(4))
+    const teePublicKeyBytes = arrayify(props.teePublicKey!)
 
-    // TODO: Replace with actual response
-    txHash.value = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
-    newBalance.value = (parseFloat(privateBalance.value) - parseFloat(amount.value)).toFixed(2)
+    const userClient = new UserClient(
+      arrayify(props.privateKey),
+      userPublicKey,
+      teePublicKeyBytes,
+      props.litGhostContract
+    )
+
+    // Get leaf index and fetch leaf to get current nonce
+    const leafIdx = await userClient.getLeafIndex()
+    const leaves = await props.litGhostContract.getLeaves([leafIdx])
+    const currentNonce = Number(leaves[0].nonce)
+
+    // Convert amount from decimal (2 decimals) to cents (integer)
+    const amountCents = Math.round(parseFloat(amount.value) * 100)
+
+    // Map actionType to operation type ('internal' -> 'transfer')
+    const operationType: 'transfer' | 'withdraw' = actionType.value === 'internal' ? 'transfer' : 'withdraw'
+
+    processingStatus.value = 'Signing operation...'
+
+    // Create signed operation
+    const operation = await createSignedOperation(
+      props.username,
+      props.privateKey,
+      currentNonce,
+      operationType,
+      destination.value,
+      amountCents
+    )
+
+    processingStatus.value = 'Submitting to Lit Action...'
+
+    // Call Lit Action
+    const result = await props.ghostClient.transferWithdraw([operation])
+
+    processingStatus.value = 'Waiting for blockchain confirmation...'
+
+    // Success! Extract transaction hash
+    txHash.value = result.updateTxHash
+
+    // Refresh balance after successful transaction
+    await refreshBalance(true)
+
+    // Update newBalance for display
+    newBalance.value = privateBalance.value
 
     viewState.value = 'success'
 
@@ -246,6 +323,7 @@ async function handleSend() {
     }
 
   } catch (err) {
+    console.error('Transfer/withdraw error:', err)
     errorMessage.value = err instanceof Error ? err.message : 'Failed to process transfer'
     viewState.value = 'error'
   }
@@ -262,6 +340,7 @@ function resetToForm() {
   processedAmount.value = ''
   processedDestination.value = ''
   newBalance.value = null
+  processingStatus.value = ''
 }
 </script>
 
@@ -358,10 +437,9 @@ function resetToForm() {
           <!-- Processing View -->
           <div v-else-if="viewState === 'processing'" class="space-y-4 py-8 text-center">
             <div class="w-16 h-16 mx-auto mb-4 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <h3 class="text-xl font-semibold">Processing Transfer...</h3>
+            <h3 class="text-xl font-semibold">Processing {{ actionType === 'internal' ? 'Transfer' : 'Withdrawal' }}...</h3>
             <div class="space-y-2 text-sm text-muted-foreground">
-              <p>• Submitting to Lit Action...</p>
-              <p>• Waiting for blockchain...</p>
+              <p v-if="processingStatus">{{ processingStatus }}</p>
             </div>
           </div>
 

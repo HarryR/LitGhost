@@ -1,6 +1,7 @@
 import type {
   GhostRequest,
   GhostResponseDataMap,
+  TransferWithdrawOperation,
 } from '@monorepo/lit-action/params';
 
 /**
@@ -49,4 +50,5 @@ export interface IGhostClient {
       };
     };
   }): Promise<GhostResponseDataMap['submit-deposit']>;
+  transferWithdraw(operations: TransferWithdrawOperation[]): Promise<GhostResponseDataMap['transfer-withdraw']>;
 }
