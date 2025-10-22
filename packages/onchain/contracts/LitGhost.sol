@@ -107,6 +107,7 @@ contract LitGhost {
     function setEntropy(Entropy calldata in_entropy)
         public
     {
+        // Can only be set once, to initialize it
         require( m_owner == address(0), "403.1" );
 
         // Verify the signature matches the entropy data
@@ -280,9 +281,9 @@ contract LitGhost {
             m_dust += leafDust;
         }
 
-        emit OpDeposit(m_counters.opCount, to.rand, to.user, leafAmount, from);
-
         m_counters.opCount += 1;
+
+        emit OpDeposit(m_counters.opCount, to.rand, to.user, leafAmount, from);        
     }
 
     function _safeTransfer(address to, uint256 amount)

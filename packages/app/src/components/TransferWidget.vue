@@ -37,13 +37,17 @@ const amountInputRef = ref<InstanceType<typeof AmountInput> | null>(null);
 const canTransfer = computed(() => {
   if (!props.litGhostContract || !props.signer || !props.teePublicKey) return false;
 
+  const usernameInput = usernameInputRef.value;
+  const amountInput = amountInputRef.value;
+
   // Check if username input has a valid cleaned value
-  if (!usernameInputRef.value?.isValid) return false;
-  if (!usernameInputRef.value?.cleanedValue) return false;
+  // Exposed computed refs are automatically unwrapped by defineExpose
+  if (!usernameInput?.isValid) return false;
+  if (!usernameInput?.cleanedValue) return false;
 
   // Check if amount input has a valid parsed value
-  if (!amountInputRef.value?.isValid) return false;
-  if (!amountInputRef.value?.parsedValue) return false;
+  if (!amountInput?.isValid) return false;
+  if (!amountInput?.parsedValue) return false;
 
   return true;
 });
@@ -55,15 +59,17 @@ async function handleTransfer() {
 
   try {
     // Get the cleaned username from the input component (already validated and cleaned)
+    // cleanedValue is automatically unwrapped from ComputedRef by defineExpose
     const cleanedUsername = usernameInputRef.value?.cleanedValue;
     if (!cleanedUsername) {
-      throw new Error('Invalid username');
+      throw new Error(`Invalid username: ${cleanedUsername}`);
     }
 
     // Get the parsed amount from the input component (already validated)
+    // parsedValue is automatically unwrapped from ComputedRef by defineExpose
     const parsedAmount = amountInputRef.value?.parsedValue;
     if (!parsedAmount) {
-      throw new Error('Invalid amount');
+      throw new Error(`Invalid amount: ${parsedAmount}`);
     }
 
     // Parse amount to token units (6 decimals for PYUSD)

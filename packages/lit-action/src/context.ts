@@ -243,7 +243,7 @@ export class GhostContext {
     return this.setEntropy(decrypted, pkpEthAddress, pkpPublicKey);
   }
 
-  async signAndSendTx(pkpPublicKey:string, tx:any) {
+  async signAndSendTx(pkpPublicKey:string, tx:any, wait?:boolean) {
     const unsignedTx = serializeTransaction(tx);
     const txHash = keccak256(unsignedTx);
     const txSig = this.litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
@@ -251,10 +251,10 @@ export class GhostContext {
       publicKey: pkpPublicKey,
       sigName: `sig-${txHash}`,
     }));
-    return await this.sendSignedTx(txSig, tx);
+    return await this.sendSignedTx(txSig, tx, wait);
   }
 
-  async sendSignedTx(signature:EntropySig, tx:any)
+  async sendSignedTx(signature:EntropySig, tx:any, wait?:boolean)
   {
     const signedTx = serializeTransaction(tx, signature);
     const finalTxHash = keccak256(signedTx);
@@ -267,7 +267,10 @@ export class GhostContext {
     });
 
     // All nodes wait for confirmation (using the computed hash)
-    return await this.provider.waitForTransaction(finalTxHash);
+    if( wait ) {
+      await this.provider.waitForTransaction(finalTxHash);
+    }
+    return finalTxHash;
   }
 
   async getManager() {

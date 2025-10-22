@@ -9,8 +9,9 @@ import EthereumAddressInput from './inputs/EthereumAddressInput.vue'
 import type { IGhostClient } from '../ighostclient'
 import { Wallet } from '@ethersproject/wallet'
 import { UserClient } from '@monorepo/core'
-import { arrayify, splitSignature } from '@ethersproject/bytes'
+import { arrayify } from '@ethersproject/bytes'
 import { keccak256 } from '@ethersproject/solidity'
+import { defaultAbiCoder } from '@ethersproject/abi'
 import type { TransferWithdrawOperation } from '@monorepo/lit-action/params'
 
 interface Props {
@@ -176,6 +177,7 @@ const isReady = computed(() => props.ghostClient && props.privateKey && hasLoade
 // For internal transfers, we'll get the cleaned username from the input component ref
 const destination = computed(() => {
   if (actionType.value === 'internal') {
+    // cleanedValue is automatically unwrapped from ComputedRef by defineExpose
     return usernameInputRef.value?.cleanedValue || ''
   }
   return withdrawAddress.value
@@ -195,14 +197,17 @@ async function createSignedOperation(
 
   // Construct message digest for signature
   // Message format: hash(fromTelegramUsername, nonce, operationType, destination, amountCents)
-  const messageHash = keccak256(
+  // IMPORTANT: Must use defaultAbiCoder.encode (standard ABI encoding) to match verification in Lit Action
+  const encodedMessage = defaultAbiCoder.encode(
     ['string', 'uint256', 'string', 'string', 'uint256'],
     [fromUsername, nonce, operationType, destination, amountCents]
   )
+  const messageHash = keccak256(['bytes'], [encodedMessage])
 
-  // Sign the message
-  const signature = await wallet.signMessage(arrayify(messageHash))
-  const { v, r, s } = splitSignature(signature)
+  // Sign the raw digest (not using signMessage which adds Ethereum prefix)
+  // @ts-ignore - _signDigest is not in the public API but we need it
+  const signature = wallet._signingKey().signDigest(messageHash)
+  const { v, r, s } = signature
 
   return {
     fromTelegramUsername: fromUsername,
@@ -219,8 +224,11 @@ async function createSignedOperation(
 const isFormValid = computed(() => {
   // For internal transfers, check username validity
   if (actionType.value === 'internal') {
-    if (!usernameInputRef.value?.isValid) return false
-    if (!usernameInputRef.value?.cleanedValue) return false
+    const usernameInput = usernameInputRef.value
+    if (!usernameInput) return false
+    // Exposed computed refs are automatically unwrapped by defineExpose
+    if (!usernameInput.isValid) return false
+    if (!usernameInput.cleanedValue) return false
   }
 
   // For withdrawals, check address validity (basic check)
@@ -229,9 +237,11 @@ const isFormValid = computed(() => {
   }
 
   // Check if amount input has a valid parsed value
-  // Note: isValid and parsedValue are ComputedRefs exposed from AmountInput
-  if (!amountInputRef.value?.isValid) return false
-  if (!amountInputRef.value?.parsedValue) return false
+  const amountInput = amountInputRef.value
+  if (!amountInput) return false
+  // Exposed computed refs are automatically unwrapped by defineExpose
+  if (!amountInput.isValid) return false
+  if (!amountInput.parsedValue) return false
 
   return true
 })
@@ -267,6 +277,13 @@ async function setActionType(type: ActionType) {
 async function handleSend() {
   if (!isFormValid.value || !props.ghostClient || !props.privateKey || !props.username) return
 
+  // IMPORTANT: Capture values from refs BEFORE changing viewState
+  // When viewState changes, the form is destroyed and refs become null
+  const parsedAmount = amountInputRef.value?.parsedValue
+  if (!parsedAmount) {
+    throw new Error(`Invalid amount: ${parsedAmount}`)
+  }
+
   viewState.value = 'processing'
   processedAmount.value = amount.value
   processedDestination.value = destination.value
@@ -291,12 +308,6 @@ async function handleSend() {
     const leaves = await props.litGhostContract.getLeaves([leafIdx])
     const currentNonce = Number(leaves[0].nonce)
 
-    // Get the parsed amount from the input component (already validated)
-    const parsedAmount = amountInputRef.value?.parsedValue
-    if (!parsedAmount) {
-      throw new Error('Invalid amount')
-    }
-
     // Convert amount from decimal (2 decimals) to cents (integer)
     const amountCents = Math.round(parsedAmount * 100)
 
@@ -320,10 +331,39 @@ async function handleSend() {
     // Call Lit Action
     const result = await props.ghostClient.transferWithdraw([operation])
 
+    // Extract transaction hash
+    txHash.value = result.updateTxHash
+
     processingStatus.value = 'Waiting for blockchain confirmation...'
 
-    // Success! Extract transaction hash
-    txHash.value = result.updateTxHash
+    // Wait for transaction to be mined (with polling fallback)
+    console.log('Waiting for transaction:', txHash.value)
+    let receipt = null
+    const maxAttempts = 30 // 30 attempts * 2 seconds = 60 seconds max
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        receipt = await props.provider.getTransactionReceipt(txHash.value)
+        if (receipt) {
+          console.log('Transaction mined! Receipt:', receipt)
+          if (receipt.status === 0) {
+            throw new Error('Transaction failed on-chain')
+          }
+          break
+        }
+      } catch (err) {
+        console.error('Error fetching receipt:', err)
+      }
+
+      // Wait 2 seconds before next attempt
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      console.log(`Polling for receipt... attempt ${i + 1}/${maxAttempts}`)
+    }
+
+    if (!receipt) {
+      console.warn('Transaction not confirmed after 60s, but continuing anyway')
+    }
+
+    processingStatus.value = 'Refreshing balance...'
 
     // Refresh balance after successful transaction
     await refreshBalance(true)
@@ -341,7 +381,16 @@ async function handleSend() {
 
   } catch (err) {
     console.error('Transfer/withdraw error:', err)
-    errorMessage.value = err instanceof Error ? err.message : 'Failed to process transfer'
+
+    // Extract detailed error message from GhostClientError
+    if (err instanceof Error && 'details' in err && err.details) {
+      console.error('Error details:', err.details)
+      // Show both the message and details
+      errorMessage.value = `${err.message}\n\nDetails: ${JSON.stringify(err.details, null, 2)}`
+    } else {
+      errorMessage.value = err instanceof Error ? err.message : 'Failed to process transfer'
+    }
+
     viewState.value = 'error'
   }
 }
@@ -358,6 +407,31 @@ function resetToForm() {
   processedDestination.value = ''
   newBalance.value = null
   processingStatus.value = ''
+}
+
+// Copy transaction hash to clipboard
+async function copyTxHash() {
+  if (!txHash.value) return
+
+  try {
+    await navigator.clipboard.writeText(txHash.value)
+    // Could show a toast notification here if desired
+  } catch (err) {
+    console.error('Failed to copy:', err)
+    // Fallback: select and copy (for older browsers)
+    const textArea = document.createElement('textarea')
+    textArea.value = txHash.value
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    document.body.appendChild(textArea)
+    textArea.select()
+    try {
+      document.execCommand('copy')
+    } catch (err2) {
+      console.error('Fallback copy failed:', err2)
+    }
+    document.body.removeChild(textArea)
+  }
 }
 </script>
 
@@ -456,6 +530,36 @@ function resetToForm() {
             <div class="space-y-2 text-sm text-muted-foreground">
               <p v-if="processingStatus">{{ processingStatus }}</p>
             </div>
+
+            <!-- Transaction Hash Display (once available) -->
+            <div v-if="txHash" class="mt-4 bg-muted rounded-md p-4">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs text-muted-foreground mb-1">Transaction ID</p>
+                  <p class="font-mono text-xs truncate">{{ txHash }}</p>
+                </div>
+                <div class="flex gap-2">
+                  <Button
+                    @click="copyTxHash"
+                    variant="ghost"
+                    size="sm"
+                    class="h-8 px-2"
+                    title="Copy transaction hash"
+                  >
+                    📋
+                  </Button>
+                  <a
+                    v-if="blockExplorerUrl"
+                    :href="blockExplorerUrl"
+                    target="_blank"
+                    class="inline-flex items-center justify-center h-8 px-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+                    title="View on explorer"
+                  >
+                    ↗
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Success View -->
@@ -470,18 +574,18 @@ function resetToForm() {
                 <span class="text-muted-foreground">Sent:</span>
                 <span class="font-semibold">{{ processedAmount }} PYUSD</span>
               </div>
-              <div class="flex justify-between text-sm">
-                <span class="text-muted-foreground">To:</span>
-                <span class="font-mono text-xs">{{ processedDestination }}</span>
+              <div class="flex justify-between text-sm gap-2">
+                <span class="text-muted-foreground flex-shrink-0">To:</span>
+                <span class="font-mono text-xs truncate">{{ processedDestination }}</span>
               </div>
-              <div class="flex justify-between text-sm">
-                <span class="text-muted-foreground">Transaction:</span>
+              <div class="flex justify-between text-sm gap-2">
+                <span class="text-muted-foreground flex-shrink-0">Transaction:</span>
                 <a
                   :href="blockExplorerUrl"
                   target="_blank"
-                  class="font-mono text-xs text-primary hover:underline"
+                  class="font-mono text-xs text-primary hover:underline truncate"
                 >
-                  {{ txHash?.slice(0, 10) }}...{{ txHash?.slice(-8) }} ↗
+                  {{ txHash }} ↗
                 </a>
               </div>
               <div v-if="newBalance" class="flex justify-between text-sm pt-2 border-t border-border">

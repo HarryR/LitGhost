@@ -60,7 +60,8 @@ export {
   recoverAddress,
   joinSignature,
   serializeTransaction,
-  defaultAbiCoder
+  defaultAbiCoder,
+  computeAddress
 } from './ethers-compat';
 
 // Manager utilities

@@ -27,6 +27,7 @@ export const recoverPublicKey = globalEthers.utils.recoverPublicKey;
 export const randomBytes = globalEthers.utils.randomBytes;
 export const recoverAddress = globalEthers.utils.recoverAddress;
 export const serializeTransaction = globalEthers.utils.serializeTransaction;
+export const computeAddress = globalEthers.utils.computeAddress;
 export const joinSignature = globalEthers.utils.joinSignature;
 export const verifyMessage = globalEthers.utils.verifyMessage;
 export const Contract = globalEthers.Contract;

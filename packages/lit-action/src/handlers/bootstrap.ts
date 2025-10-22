@@ -72,13 +72,12 @@ export async function handleBootstrap(request: GhostRequestBootstrap, ctx: Ghost
   if (!teeEncPublicKeyOnChainMatches) {
     throw new Error('Verification failed: teeEncPublicKey mismatch');
   }
+
   // NOW attempt to decrypt and reload entropy
-  let reloadedEntropy: Uint8Array;
   let reloadedPrivateParams: any;
   let reloadedTeeEncPublicKey: string;
 
   try {
-    reloadedEntropy = await ctx.entropy();
     reloadedPrivateParams = await ctx.getPrivateParams();
     const reloadedManager = await ctx.getManager();
     reloadedTeeEncPublicKey = hexlify(reloadedManager.teePublicKey);
@@ -142,6 +141,6 @@ async function sendSetEntropyTransaction(
     type: 2,
   };
 
-  const txReceipt = await ctx.signAndSendTx(pkpPublicKey, tx);
-  return txReceipt.transactionHash;
+  // Wait for the tx to be mined
+  return await ctx.signAndSendTx(pkpPublicKey, tx, true);
 }

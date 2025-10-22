@@ -26,8 +26,16 @@ import {
 import { LitGhost } from '@monorepo/core';
 import TransferWidget from './components/TransferWidget.vue';
 import PrivateBalanceManager from './components/PrivateBalanceManager.vue';
+import { JsonRpcProvider } from '@ethersproject/providers';
 
 const { address, chainId, connected, connecting, connect, switchChain, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
+
+// Create a direct RPC provider for read operations (bypasses MetaMask caching)
+// MetaMask aggressively caches eth_call results, causing stale balance reads
+const rpcProvider = new JsonRpcProvider(import.meta.env.VITE_RPC_URL);
+
+// Create read-only LitGhost contract instance (for balance reads)
+const litGhostContractReadOnly = LitGhost.attach(import.meta.env.VITE_CONTRACT_LITGHOST).connect(rpcProvider);
 
 // Secret import for LitGhost
 const {
@@ -380,8 +388,8 @@ const connectionStatus = computed(() => {
         :ghost-client="gc"
         :private-key="litGhostSecret"
         :username="litGhostUsername"
-        :provider="provider"
-        :lit-ghost-contract="litGhostContract"
+        :provider="rpcProvider"
+        :lit-ghost-contract="litGhostContractReadOnly"
         :tee-public-key="teePublicKey"
       />
 

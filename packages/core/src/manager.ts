@@ -317,6 +317,7 @@ export class ManagerContext {
   }> {
     const filter = this.contract.filters.OpDeposit();
     const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
+    console.log(`[processDepositEvents] queryFilter(${fromBlock}, ${toBlock}) returned ${events.length} events, lastProcessedOpIndex=${lastProcessedOpIndex}`);
 
     const validDeposits: DepositEvent[] = [];
     const invalidDeposits: Array<{ event: any; reason: string }> = [];
@@ -330,7 +331,11 @@ export class ManagerContext {
       const args = event.args!;
 
       // Skip already processed operations
+      // processedOps represents the number of operations processed, so operations [1, processedOps] are done
+      // Operation indices are 1-indexed (first operation has idx=1)
+      // An operation with idx=N should be processed if N > processedOps
       if (args.idx <= lastProcessedOpIndex) {
+        console.log(`[processDepositEvents] Skipping already processed opIndex=${args.idx} (lastProcessedOpIndex=${lastProcessedOpIndex})`);
         continue;
       }
 
@@ -366,6 +371,7 @@ export class ManagerContext {
         }
 
         // Valid deposit
+        console.log(`[processDepositEvents] Found valid deposit: opIndex=${opIndex}, telegramUsername=${telegramUsername}, amount=${amount}, block=${blockNumber}`);
         validDeposits.push({
           opIndex,
           telegramUsername,
@@ -970,8 +976,11 @@ export class ManagerContext {
     const lastProcessedOpIndex = context.counters.processedOps;
     const currentBlock = await this.contract.provider.getBlockNumber();
 
+    console.log(`[collectPendingDeposits] lastProcessedBlock=${lastProcessedBlock}, lastProcessedOpIndex=${lastProcessedOpIndex}, currentBlock=${currentBlock}, opCount=${context.counters.opCount}`);
+
     // If we're already caught up, return empty deposits and advance cursor to current block
     if (lastProcessedBlock >= currentBlock) {
+      console.log(`[collectPendingDeposits] Already caught up, returning empty`);
       return { deposits: [], invalidDeposits: [], nextBlock: currentBlock };
     }
 
@@ -987,11 +996,13 @@ export class ManagerContext {
     ) {
       const chunkEnd = Math.min(scanCursor + blockChunkSize, currentBlock);
 
+      console.log(`[collectPendingDeposits] Scanning blocks ${scanCursor} to ${chunkEnd}`);
       const { validDeposits, invalidDeposits } = await this.processDepositEvents(
         scanCursor,
         chunkEnd,
         lastProcessedOpIndex
       );
+      console.log(`[collectPendingDeposits] Found ${validDeposits.length} valid deposits, ${invalidDeposits.length} invalid deposits`);
 
       collectedDeposits.push(...validDeposits);
       allInvalidDeposits.push(...invalidDeposits);
@@ -1007,6 +1018,7 @@ export class ManagerContext {
 
     // If no deposits found in any chunks, advance to where we scanned up to
     if (collectedDeposits.length === 0) {
+      console.log(`[collectPendingDeposits] No deposits found, returning nextBlock=${scanCursor}`);
       return { deposits: [], invalidDeposits: allInvalidDeposits, nextBlock: scanCursor };
     }
 
@@ -1035,6 +1047,7 @@ export class ManagerContext {
       nextBlock = lastProcessedDepositBlock + 1;
     }
 
+    console.log(`[collectPendingDeposits] Returning ${depositsToProcess.length} deposits, nextBlock=${nextBlock}`);
     return { deposits: depositsToProcess, invalidDeposits: allInvalidDeposits, nextBlock };
   }
 

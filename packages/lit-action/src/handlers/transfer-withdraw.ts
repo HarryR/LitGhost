@@ -2,7 +2,8 @@ import { GhostRequestTransferWithdraw, GhostResponse, TransferWithdrawResponseDa
 import { type GhostContext } from '../context';
 import {
   hexlify, isValidTelegramUsername, InternalTransaction,
-  keccak256, defaultAbiCoder, recoverAddress, joinSignature
+  keccak256, defaultAbiCoder, recoverAddress, joinSignature,
+  ManagerContext, computeAddress
 } from '@monorepo/core/sandboxed';
 
 /**
@@ -141,12 +142,12 @@ export async function handleTransferWithdraw(
       type: 2,
     };
 
-    const updateReceipt = await ctx.signAndSendTx(pkpPublicKey, updateTx);
+    const updateTxHash = await ctx.signAndSendTx(pkpPublicKey, updateTx);
 
     return {
       ok: true,
       data: {
-        updateTxHash: updateReceipt.transactionHash,
+        updateTxHash,
         skippedOperations: validationErrors.length > 0 ? validationErrors : undefined,
       },
     };
@@ -167,7 +168,7 @@ export async function handleTransferWithdraw(
 async function validateAndProcessOperation(
   op: TransferWithdrawOperation,
   _index: number,
-  manager: any
+  manager: ManagerContext
 ): Promise<{
   valid: boolean;
   error?: string;
@@ -177,7 +178,7 @@ async function validateAndProcessOperation(
   try {
     // Step 1: Derive user keypair from telegram username
     const ukp = manager.getUserKeypair(op.fromTelegramUsername);
-    const expectedAddress = ukp.address;
+    const expectedAddress = computeAddress(ukp.publicKey);
 
     // Step 2: Construct message digest for signature verification
     // Message format: hash(fromTelegramUsername, nonce, operationType, destination, amountCents)

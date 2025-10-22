@@ -100,22 +100,21 @@ export async function handleSubmitDeposit(
       type: 2,
     };
 
-    const depositTxReceipt = await ctx.signAndSendTx(pkpPublicKey, depositTx);
-    
-    console.log('Deposit transaction sent:', depositTxReceipt.transactionHash);
-
-    // Wait for deposit confirmation
-    console.log('Deposit transaction confirmed!');
+    const depositTxHash = await ctx.signAndSendTx(pkpPublicKey, depositTx, true);
 
     // Step 5: Run manager.step() with 10s time budget to process the deposit
     const manager = await ctx.getManager();
-    const { batch } = await manager.step(
+    const { batch, skippedOperations } = await manager.step(
       [], // no internal transactions
       [], // no payouts
       10, // max 10 deposits
       1000, // 1000 blocks per chunk
       10000 // 10 second time budget
     );
+
+    if( skippedOperations.length > 0 ) {
+      console.log('Skipped operations', skippedOperations);
+    }
 
     // Step 6: Compute transcript
     const transcript = await manager.computeTranscriptForBatch(batch);
@@ -182,13 +181,13 @@ export async function handleSubmitDeposit(
       type: 2,
     };
 
-    const updateReceipt = await ctx.signAndSendTx(pkpPublicKey, updateTx);
+    const updateTxHash = await ctx.signAndSendTx(pkpPublicKey, updateTx);
 
     return {
       ok: true,
       data: {
-        depositTxHash: depositTxReceipt.transactionHash,
-        updateTxHash: updateReceipt.transactionHash,
+        depositTxHash,
+        updateTxHash
       },
     };
 
