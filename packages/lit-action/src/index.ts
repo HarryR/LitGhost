@@ -55,7 +55,7 @@ async function main() {
   catch (error) {
     Lit.Actions.setResponse({
       response: JSON.stringify({
-        success: false,
+        ok: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       }),
     });

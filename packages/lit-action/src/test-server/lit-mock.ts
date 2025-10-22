@@ -310,20 +310,17 @@ export function createLitMock(
 
       /**
        * Mock getRpcUrl - returns RPC URL for a blockchain
-       * In mock mode, only 'localnet' is supported
+       * In mock mode, we return a local RPC URL for any chain
        *
        * @param params - RPC URL parameters
-       * @param params.chain - The chain to get the RPC URL for (only 'localnet' is supported)
+       * @param params.chain - The chain to get the RPC URL for
        * @returns Promise with the RPC URL for the chain
-       * @throws Error if chain is not 'localnet'
        */
       async getRpcUrl(params: { chain: string }): Promise<string> {
         console.log(`[Mock] Lit.Actions.getRpcUrl called (chain: ${params.chain})`);
 
-        if (params.chain !== 'localnet') {
-          throw new Error(`Mock getRpcUrl only supports 'localnet' chain, got '${params.chain}'`);
-        }
-
+        // In mock mode, always return localhost RPC regardless of chain
+        // Real Lit Actions would return actual RPC URLs for different chains
         const rpcUrl = 'http://127.0.0.1:8545/';
         console.log(`[Mock] Returning RPC URL: ${rpcUrl}`);
         return rpcUrl;

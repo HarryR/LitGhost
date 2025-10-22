@@ -88,7 +88,7 @@ describe('Test Server HTTP Handler', () => {
         .expect(200);
 
       expect(response.body.ok).toBe(false);
-      expect(response.body.error).toContain('Unknown ghostRequest type');
+      expect(response.body.error).toContain('Cannot validate ghostRequest');
     });
   });
 

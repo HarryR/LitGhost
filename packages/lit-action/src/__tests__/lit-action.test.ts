@@ -96,7 +96,7 @@ describe('Lit Action', () => {
 
       expect(response.ok).toBe(false);
       if (!response.ok) {
-        expect(response.error).toContain('Unknown ghostRequest type');
+        expect(response.error).toContain('Cannot validate ghostRequest');
       }
     });
   });
