@@ -317,12 +317,14 @@ async function handleSend() {
     processingStatus.value = 'Signing operation...'
 
     // Create signed operation
+    // Use processedDestination instead of destination.value because the form
+    // has been destroyed at this point (viewState changed to 'processing')
     const operation = await createSignedOperation(
       props.username,
       props.privateKey,
       currentNonce,
       operationType,
-      destination.value,
+      processedDestination.value,
       amountCents
     )
 
