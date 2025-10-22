@@ -55,9 +55,10 @@ const newBalance = ref<string | null>(null)
 // Processing status tracking
 const processingStatus = ref<string>('')
 
-// Template refs for auto-focus
+// Template refs for auto-focus and accessing parsed values
 const usernameInputRef = ref<InstanceType<typeof TelegramUsernameInput> | null>(null)
 const addressInputRef = ref<InstanceType<typeof EthereumAddressInput> | null>(null)
+const amountInputRef = ref<InstanceType<typeof AmountInput> | null>(null)
 
 // Balance state
 const balance = ref<number | null>(null)
@@ -171,18 +172,13 @@ const privateBalance = computed(() => {
 // Computed property to check if we have everything needed
 const isReady = computed(() => props.ghostClient && props.privateKey && hasLoadedOnce.value && balance.value !== null)
 
-// Clean username (strip @ and whitespace) for internal transfers
-const cleanedUsername = computed(() => {
-  let cleaned = username.value.trim()
-  if (cleaned.startsWith('@')) {
-    cleaned = cleaned.slice(1)
-  }
-  return cleaned
-})
-
 // Get the current destination based on action type
+// For internal transfers, we'll get the cleaned username from the input component ref
 const destination = computed(() => {
-  return actionType.value === 'internal' ? cleanedUsername.value : withdrawAddress.value
+  if (actionType.value === 'internal') {
+    return usernameInputRef.value?.cleanedValue || ''
+  }
+  return withdrawAddress.value
 })
 
 // Create signed operation for transfer/withdraw
@@ -218,10 +214,25 @@ async function createSignedOperation(
   }
 }
 
-// Form validation - check if all required fields are filled
+// Form validation - check if all required fields are filled and valid
 // The actual validation is handled by the input components
 const isFormValid = computed(() => {
-  if (!amount.value || !destination.value) return false
+  // For internal transfers, check username validity
+  if (actionType.value === 'internal') {
+    if (!usernameInputRef.value?.isValid) return false
+    if (!usernameInputRef.value?.cleanedValue) return false
+  }
+
+  // For withdrawals, check address validity (basic check)
+  if (actionType.value === 'withdraw') {
+    if (!withdrawAddress.value) return false
+  }
+
+  // Check if amount input has a valid parsed value
+  // Note: isValid and parsedValue are ComputedRefs exposed from AmountInput
+  if (!amountInputRef.value?.isValid) return false
+  if (!amountInputRef.value?.parsedValue) return false
+
   return true
 })
 
@@ -280,8 +291,14 @@ async function handleSend() {
     const leaves = await props.litGhostContract.getLeaves([leafIdx])
     const currentNonce = Number(leaves[0].nonce)
 
+    // Get the parsed amount from the input component (already validated)
+    const parsedAmount = amountInputRef.value?.parsedValue
+    if (!parsedAmount) {
+      throw new Error('Invalid amount')
+    }
+
     // Convert amount from decimal (2 decimals) to cents (integer)
-    const amountCents = Math.round(parseFloat(amount.value) * 100)
+    const amountCents = Math.round(parsedAmount * 100)
 
     // Map actionType to operation type ('internal' -> 'transfer')
     const operationType: 'transfer' | 'withdraw' = actionType.value === 'internal' ? 'transfer' : 'withdraw'
@@ -354,9 +371,6 @@ function resetToForm() {
           <div class="text-center py-2">
             <div class="flex items-center justify-center gap-2 mb-2">
               <p class="text-sm text-muted-foreground">Your Private Balance</p>
-              <Badge v-if="!isRegistered" variant="outline" class="text-xs">
-                Not on-chain yet
-              </Badge>
               <Button
                 @click="() => refreshBalance(false)"
                 variant="ghost"
@@ -416,6 +430,7 @@ function resetToForm() {
 
             <!-- Amount Input -->
             <AmountInput
+              ref="amountInputRef"
               v-model="amount"
               label="Amount"
               :balance="privateBalance"

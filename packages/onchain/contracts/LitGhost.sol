@@ -107,7 +107,23 @@ contract LitGhost {
     function setEntropy(Entropy calldata in_entropy)
         public
     {
-        // TODO: in production, only allow entropy to be set once!
+        require( m_owner == address(0), "403.1" );
+
+        // Verify the signature matches the entropy data
+        bytes32 dataHash = in_entropy.digest;
+        bytes memory ciphertextBytes = bytes(in_entropy.ciphertext);
+        bytes memory cidBytes = bytes(in_entropy.ipfsCid);
+
+        bytes32 messageHash = keccak256(abi.encodePacked(dataHash, ciphertextBytes, cidBytes));
+
+        address recovered = ecrecover(
+            messageHash,
+            in_entropy.sig.v,
+            in_entropy.sig.r,
+            in_entropy.sig.s
+        );
+
+        require(recovered == msg.sender, "403.2");
 
         m_entropy = in_entropy;
 
@@ -137,8 +153,6 @@ contract LitGhost {
         m_token = in_token;
 
         m_decimals = in_token.decimals();
-
-        m_owner = msg.sender;
 
         // Initialize userCount to 1, treating user ID 0 as a sentinel value
         // This allows us to distinguish "user doesn't exist" (returns 0) from actual users (>= 1)
@@ -450,7 +464,7 @@ contract LitGhost {
         {
             m_dust = 0;
 
-            require(_safeTransfer(m_owner, dust), "Dust transfer failed");
+            require(_safeTransfer(msg.sender, dust), "Dust transfer failed");
         }
     }
 }

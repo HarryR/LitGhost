@@ -1,24 +1,24 @@
 {
   "network": "datil-dev",
   "mode": "development",
-  "timestamp": "2025-10-21T09:30:03.825Z",
+  "timestamp": "2025-10-21T18:07:28.804Z",
   "pkp": {
-    "tokenId": "0x2bcb4b3c1a4c497d6d685dd89bc3d94f4ed222489a344bb45ab87f0a5e801fbf",
-    "publicKey": "0495a522a3e96e6714bb3b33c44c5cacc1e27d386e8ca4e3006e3934b68750a40d7610385f7dc2b7ddcfe96cc746d36cc9354357118cd6c33263be6d651bc69786",
-    "ethAddress": "0xC0a0fCd8e5142d979826e16C9373F260F475e4e4",
-    "mintTxHash": "0x2b75d536c2bdb1edf21658e915d084186a51f2e1092686552e8cfec81f742b22"
+    "tokenId": "0x6664c57196ddf146d7fb1f9fb8bdb083e4b4c60bfb47aaea9471fc0e94a309e0",
+    "publicKey": "04ecf0817292050e04b061f617b13233ef579fd8a245960dd4293ebb49e085701eca95a5cf43124b54c92e5da17ae8d2ef93cb21839c4ed5fa60d02671de9b158c",
+    "ethAddress": "0xa8138736A1cD610Af6184b5Ca99De0131506cD65",
+    "mintTxHash": "0xc2fbc64d5d2cfc31bb62376b062bfe7129ba856f981edbcbe9cefad71022b608"
   },
   "litAction": {
-    "ipfsCid": "Qmep4EC7sxdNTFsrwkyZHKsXfmkfN2nUSwKTpy23iEGnsM",
-    "size": 61096
+    "ipfsCid": "QmPUZgLF1fp3RMqGf9EeTx7xMfGqgZ53kU1NeDppriCPYv",
+    "size": 66641
   },
   "encryptedData": {
-    "ciphertext": "qlDDt/CB3P+Jv2jB5npOWYvmgnvaU+i9tp8Kh6XRMsY+zeu9vue2brDTEb8LGrwkQQEHQF6xS8hUF0ul5w7wX8Tf43vyq2ZwrmK+d4wvpxyWAefVNWpJ6KawcJ4CaBDegqzxGHhEyoe8JafZ4RUXX44ABk0G5CDn0mctzOu2bWKmZ8405Q1r0aEw7fQBfaQ/1kD+F3tYqnv1qq6Gleyk1BkJj1qsGolEvLi/s7WLtP2LPhzoS20NmZPBfmUR8T2m7UbCzZpNRPKzEETf5er+ICEQfWSQeL0CoLIW4nZdOAOaB7FMT/D+ZwI=",
-    "dataHash": "4bc1aaea7935885c8f6f8ef722ebff8515020d668cca67207251266e3001e800",
+    "ciphertext": "kHmhRo2jdQJ2dHVTEge3SM5I8xXWLalJuiZ4xRrpvLE8/t8lhN/tLZrnxdDWsMscR6cHrKMIHIZaGtGkx1OUoCpzmoosugaOt016ZiD3XpeWAYPbbzv1hsUCZiN+0BWHAvYIaelYHK1iohdx6yyqEZ2I+mM/Hm4FZiAyvvovCz2cYijfk9Kmi8xpueQiS8pbdSmdqGJwxESGx86pKxKN9lFFQmb8MNe9sq3MQ5CxW/796R99oI1XCTS0oNmlkOfxBf9S+2c4Lhi0PZ6T0WQu3L2zPYWu41cuUfyj5ICKX+4Vx3EB2fvHDAI=",
+    "dataHash": "7e200818510cef0f7a5d76756a63e0fc127b8bd797b86a29c6816d703ec2cd56",
     "signature": {
-      "v": 27,
-      "r": "0x94bcc847a0ce1177677c8f123ae1323d583f8ab563f0a1b05fd607863d696a8e",
-      "s": "0x0647b9366785fdfcb3dcb703b4642b18060ce679b4e5378e615e2f2a93d79f9b"
+      "v": 28,
+      "r": "0xf5f4981c509555b6c4e5bbadcdd77fab4281ba9fb8df02677938af0b62bfcdc4",
+      "s": "0x0eb5e70757c7f145d8e15d28eb8bbc08aa451a062fef46571024561f0525122e"
     },
     "accessControlConditions": [
       {
@@ -31,15 +31,15 @@
         ],
         "returnValueTest": {
           "comparator": "=",
-          "value": "Qmep4EC7sxdNTFsrwkyZHKsXfmkfN2nUSwKTpy23iEGnsM"
+          "value": "QmPUZgLF1fp3RMqGf9EeTx7xMfGqgZ53kU1NeDppriCPYv"
         }
       }
     ],
-    "teeEncPublicKey": "0x584da816013b6fa9c211ee33ea018191d93ff721f1b0e9a4e37b685be46d156f"
+    "teeEncPublicKey": "0xfff6d34cd162b0aa3c74bec15c687ef73d3d4178eec09d2f22787d02b108e867"
   },
   "onchain": {
     "chain": "sepolia",
-    "litGhostAddress": "0x776A977DDe95D721412C8bBBfD0Dd65888E018ab",
-    "setEntropyTxHash": "0xcd220039ed2652720922e5d96ca081a5f0e6a8a9a62549224ccef12dcf6b2e42"
+    "litGhostAddress": "0x98b3f5FA0bC201702148ea2139C02842560052aF",
+    "setEntropyTxHash": "0xb4a911f0e16e3e9ed5bd937665d1ebb44ffbf2e4e6d35875a8341c22248be5f1"
   }
 }

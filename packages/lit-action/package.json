@@ -12,20 +12,7 @@
     "test": "vitest --run",
     "test:ui": "vitest --ui",
     "clean": "rm -rf dist",
-    "exp:01": "tsx scripts/experiments/01-connect-and-auth.ts",
-    "exp:02": "tsx scripts/experiments/02-mint-pkp.ts",
-    "exp:03": "tsx scripts/experiments/03-derive-key.ts",
-    "exp:04": "tsx scripts/experiments/04-params-encryption.ts",
-    "exp:05": "tsx scripts/experiments/05-root-key-derivation.ts",
-    "exp:06": "tsx scripts/experiments/06-payment-delegation.ts",
-    "exp:07": "tsx scripts/experiments/07-encryption-and-ipfs-cid.ts",
-    "exp:08": "tsx scripts/experiments/08-encrypt-decrypt-roundtrip.ts",
-    "exp:09": "tsx scripts/experiments/09-client-side-encrypt-decrypt.ts",
-    "exp:10": "tsx scripts/experiments/10-v8-client-side-encrypt-decrypt.ts",
-    "exp:11": "tsx scripts/experiments/11-deterministic-schnorr-signing.ts",
-    "exp:12": "tsx scripts/experiments/12-mint-pkp-v8.ts",
-    "exp:13": "tsx scripts/experiments/13-bootstrap-mint-and-execute.ts",
-    "bootstrap:dev": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode development --output bootstrap-development.json --debug"
+    "bootstrap": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode development --output bootstrap-development.json --debug"
   },
   "devDependencies": {
     "@lit-protocol/auth-helpers": "7.3.0",

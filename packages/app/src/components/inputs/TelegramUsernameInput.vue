@@ -21,24 +21,38 @@ defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-// Get cleaned value for validation (strip @ and whitespace)
-const cleanedValue = computed(() => {
+// Get cleaned value (strip @ and whitespace) for validation and submission
+// Returns null if invalid, or the cleaned username if valid
+// This is what parent components should use for submission
+const cleanedValue = computed((): string | null => {
+  if (!props.modelValue) return null
+
   let cleaned = props.modelValue.trim()
   if (cleaned.startsWith('@')) {
     cleaned = cleaned.slice(1)
   }
-  return cleaned
+
+  // If it's not valid, return null
+  if (cleaned && !isValidTelegramUsername(cleaned)) return null
+
+  return cleaned || null
 })
 
-// Validation logic - validate against cleaned value
+// Validation logic
 const isValid = computed(() => {
-  if (!cleanedValue.value) return !props.required
-  return isValidTelegramUsername(cleanedValue.value)
+  if (!props.modelValue) return !props.required
+  return cleanedValue.value !== null
 })
 
 const errorMessage = computed(() => {
-  if (!cleanedValue.value || isValid.value) return ''
+  if (!props.modelValue || isValid.value) return ''
   return 'Invalid Telegram username. Must be 5-32 characters (alphanumeric and underscores only)'
+})
+
+// Expose cleanedValue and isValid for parent components to access via ref
+defineExpose({
+  cleanedValue,
+  isValid
 })
 </script>
 
@@ -56,7 +70,7 @@ const errorMessage = computed(() => {
       :class="[
         'font-mono',
         errorMessage ? '!border-destructive' : '',
-        isValid && cleanedValue ? '!border-emerald-500 focus-visible:!ring-emerald-500' : ''
+        isValid && modelValue ? '!border-emerald-500 focus-visible:!ring-emerald-500' : ''
       ]"
     />
     <p v-if="errorMessage" class="text-xs text-destructive">

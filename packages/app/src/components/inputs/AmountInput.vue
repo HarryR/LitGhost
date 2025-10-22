@@ -16,7 +16,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   label: 'Amount',
   tokenSymbol: 'PYUSD',
-  maxDecimals: 6,
+  maxDecimals: 2,
   required: false,
   disabled: false,
 })
@@ -25,29 +25,41 @@ defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
+// Parse and clean the input value to a number (or null if invalid)
+// This is what parent components should use for submission
+const parsedValue = computed(() => {
+  if (!props.modelValue) return null
+
+  const num = parseFloat(props.modelValue)
+  if (isNaN(num) || num <= 0) return null
+
+  // Check decimal places - if valid, return the parsed number
+  const decimalRegex = new RegExp(`^\\d+(\\.\\d{1,${props.maxDecimals}})?$`)
+  if (!decimalRegex.test(props.modelValue)) return null
+
+  return num
+})
+
 // Validation logic
 const isValid = computed(() => {
   if (!props.modelValue) return !props.required
 
-  const num = parseFloat(props.modelValue)
-
-  // Check if it's a valid number
-  if (isNaN(num)) return false
-
-  // Check if it's positive
-  if (num <= 0) return false
-
-  // Check decimal places
-  const decimalRegex = new RegExp(`^\\d+(\\.\\d{1,${props.maxDecimals}})?$`)
-  if (!decimalRegex.test(props.modelValue)) return false
+  // Must have a valid parsed value
+  if (parsedValue.value === null) return false
 
   // Check if it exceeds balance
   if (props.balance) {
     const balanceNum = parseFloat(props.balance)
-    if (num > balanceNum) return false
+    if (parsedValue.value > balanceNum) return false
   }
 
   return true
+})
+
+// Expose parsedValue and isValid for parent components to access via ref
+defineExpose({
+  parsedValue,
+  isValid
 })
 
 const errorMessage = computed(() => {
@@ -87,9 +99,8 @@ const errorMessage = computed(() => {
       :id="`amount-${$attrs.id || 'input'}`"
       :model-value="modelValue"
       @update:model-value="(value) => $emit('update:modelValue', String(value))"
-      type="number"
-      step="0.01"
-      min="0"
+      type="text"
+      inputmode="decimal"
       placeholder="0.00"
       :disabled="disabled"
       :class="[

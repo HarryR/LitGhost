@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { createDepositTo, isValidTelegramUsername } from '@monorepo/core';
+import AmountInput from './inputs/AmountInput.vue';
+import TelegramUsernameInput from './inputs/TelegramUsernameInput.vue';
+import { createDepositTo } from '@monorepo/core';
 import type { Signer } from '@ethersproject/abstract-signer';
 import { Contract } from '@ethersproject/contracts';
 import { keccak256 as solidityKeccak256 } from '@ethersproject/solidity';
@@ -29,68 +29,22 @@ const recipientUsername = ref('');
 const amount = ref('');
 const isTransferring = ref(false);
 
-// Auto-strip '@' symbol from username
-watch(recipientUsername, (newValue) => {
-  if (newValue.startsWith('@')) {
-    recipientUsername.value = newValue.slice(1);
-  }
-});
+// Template refs to access parsed/cleaned values from input components
+const usernameInputRef = ref<InstanceType<typeof TelegramUsernameInput> | null>(null);
+const amountInputRef = ref<InstanceType<typeof AmountInput> | null>(null);
 
-// Validation
-const isValidUsername = computed(() => {
-  if (!recipientUsername.value) return true; // Don't show error for empty
-  return isValidTelegramUsername(recipientUsername.value);
-});
-
-const isValidAmount = computed(() => {
-  if (!amount.value) return true;
-  const num = parseFloat(amount.value);
-
-  // Check if it's a valid number
-  if (isNaN(num)) return false;
-
-  // Check if it's positive
-  if (num <= 0) return false;
-
-  // Check decimal places (max 2 decimals for PYUSD which has 6 decimals, but we limit UI to 2)
-  if (!/^\d+(\.\d{1,6})?$/.test(amount.value)) return false;
-
-  // Check if it exceeds balance
-  if (props.pyusdBalance) {
-    const balance = parseFloat(props.pyusdBalance);
-    if (num > balance) return false;
-  }
-
-  return true;
-});
-
-const amountErrorMessage = computed(() => {
-  if (!amount.value || isValidAmount.value) return '';
-
-  const num = parseFloat(amount.value);
-
-  if (isNaN(num) || num <= 0) {
-    return 'Amount must be greater than 0';
-  }
-
-  if (!/^\d+(\.\d{1,6})?$/.test(amount.value)) {
-    return 'Enter a valid amount with up to 6 decimal places';
-  }
-
-  if (props.pyusdBalance) {
-    const balance = parseFloat(props.pyusdBalance);
-    if (num > balance) {
-      return `Insufficient balance. Available: ${props.pyusdBalance} PYUSD`;
-    }
-  }
-
-  return 'Invalid amount';
-});
-
+// Form validation - child components handle all validation and cleaning
 const canTransfer = computed(() => {
   if (!props.litGhostContract || !props.signer || !props.teePublicKey) return false;
-  if (!recipientUsername.value || !amount.value) return false;
-  if (!isValidUsername.value || !isValidAmount.value) return false;
+
+  // Check if username input has a valid cleaned value
+  if (!usernameInputRef.value?.isValid) return false;
+  if (!usernameInputRef.value?.cleanedValue) return false;
+
+  // Check if amount input has a valid parsed value
+  if (!amountInputRef.value?.isValid) return false;
+  if (!amountInputRef.value?.parsedValue) return false;
+
   return true;
 });
 
@@ -100,15 +54,27 @@ async function handleTransfer() {
   isTransferring.value = true;
 
   try {
+    // Get the cleaned username from the input component (already validated and cleaned)
+    const cleanedUsername = usernameInputRef.value?.cleanedValue;
+    if (!cleanedUsername) {
+      throw new Error('Invalid username');
+    }
+
+    // Get the parsed amount from the input component (already validated)
+    const parsedAmount = amountInputRef.value?.parsedValue;
+    if (!parsedAmount) {
+      throw new Error('Invalid amount');
+    }
+
     // Parse amount to token units (6 decimals for PYUSD)
-    const amountInUnits = Math.floor(parseFloat(amount.value) * 1_000_000);
+    const amountInUnits = Math.floor(parsedAmount * 1_000_000);
 
     // Create encrypted DepositTo structure for the recipient
     const teePublicKeyBytes = new Uint8Array(
       props.teePublicKey.replace('0x', '').match(/.{2}/g)!.map((byte: string) => parseInt(byte, 16))
     );
 
-    const { depositTo } = await createDepositTo(recipientUsername.value, teePublicKeyBytes);
+    const { depositTo } = await createDepositTo(cleanedUsername, teePublicKeyBytes);
     const depositToSol = {
       rand: '0x' + Buffer.from(depositTo.rand).toString('hex'),
       user: '0x' + Buffer.from(depositTo.user).toString('hex'),
@@ -220,47 +186,21 @@ async function handleTransfer() {
       </CardTitle>
     </CardHeader>
     <CardContent class="space-y-4">
-      <div class="space-y-2">
-        <Label for="recipient" :class="{ 'text-destructive': !isValidUsername }">
-          Recipient Telegram Username
-        </Label>
-        <Input
-          id="recipient"
-          v-model="recipientUsername"
-          placeholder="alice (without @)"
-          :class="{
-            '!border-red-500 focus-visible:!ring-red-500': !isValidUsername,
-            '!border-emerald-500 focus-visible:!ring-emerald-500': recipientUsername && isValidUsername
-          }"
-        />
-        <p v-if="!isValidUsername" class="text-sm text-destructive font-medium">
-          Invalid Telegram username (1-32 chars, letters/numbers/underscores, must start with letter)
-        </p>
-      </div>
+      <TelegramUsernameInput
+        ref="usernameInputRef"
+        v-model="recipientUsername"
+        label="Recipient Telegram Username"
+        :required="true"
+      />
 
-      <div class="space-y-2">
-        <Label for="amount" :class="{ 'text-destructive': !isValidAmount }">
-          Amount (PYUSD)
-        </Label>
-        <Input
-          id="amount"
-          v-model="amount"
-          type="number"
-          step="0.01"
-          min="0"
-          placeholder="10.00"
-          :class="{
-            '!border-red-500 focus-visible:!ring-red-500': !isValidAmount,
-            '!border-emerald-500 focus-visible:!ring-emerald-500': amount && isValidAmount
-          }"
-        />
-        <p v-if="amountErrorMessage" class="text-sm text-destructive font-medium">
-          {{ amountErrorMessage }}
-        </p>
-        <p v-else-if="pyusdBalance" class="text-sm text-muted-foreground">
-          Available: {{ pyusdBalance }} PYUSD
-        </p>
-      </div>
+      <AmountInput
+        ref="amountInputRef"
+        v-model="amount"
+        label="Amount"
+        :balance="pyusdBalance"
+        token-symbol="PYUSD"
+        :required="true"
+      />
 
       <Button
         @click="handleTransfer"

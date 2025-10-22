@@ -1,16 +1,7 @@
 import { GhostRequestBootstrap, GhostResponse, BootstrapResponseData } from '../params';
-import { type GhostContext, EntropySig, Entropy } from '../context';
+import { type GhostContext, Entropy } from '../context';
 
 import { arrayify, keccak256, concat, hexlify } from '@monorepo/core/sandboxed';
-
-function litEcdsaSigToEthSig(sig: string): EntropySig {
-  const sigObj = JSON.parse(sig) as EntropySig;
-  return {
-    v: sigObj.v + 27,
-    r: '0x' + sigObj.r.slice(2),  // Lit returns SECG prefixed compressed public key! So 0x02 or 0x03 prefix,
-    s: '0x' + sigObj.s
-  }
-}
 
 /**
  * Handle bootstrap request - generates entropy, encrypts it, and signs it
@@ -31,7 +22,7 @@ export async function handleBootstrap(request: GhostRequestBootstrap, ctx: Ghost
   const ciphertextBytes = new TextEncoder().encode(encryptResult.ciphertext);
   const cidBytes = new TextEncoder().encode(currentCid);
   const toSign = arrayify(keccak256(concat([dataHashBytes, ciphertextBytes, cidBytes])));
-  const signature = litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
+  const signature = ctx.litEcdsaSigToEthSig(await Lit.Actions.signAndCombineEcdsa({
     toSign,
     publicKey: request.pkpPublicKey,
     sigName: 'bootstrap-sig',
