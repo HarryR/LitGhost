@@ -151,6 +151,8 @@ contract LitGhost {
 
     constructor(IERC20_With_Extensions in_token)
     {
+        m_owner = msg.sender;
+
         m_token = in_token;
 
         m_decimals = in_token.decimals();
