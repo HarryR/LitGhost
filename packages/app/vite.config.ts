@@ -1,7 +1,7 @@
 import { defineConfig, Plugin } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { sri } from 'vite-plugin-sri3'
+import { sri } from './vite-plugin-sri-fixed'
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
