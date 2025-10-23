@@ -51,6 +51,10 @@ jobs:
 
       - name: Build packages
         run: pnpm build
+        env:
+          HARDHAT_VAR_SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          HARDHAT_VAR_PROJECT_KEY_TEST: ${{ secrets.PROJECT_KEY_TEST }}
+          HARDHAT_VAR_ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
