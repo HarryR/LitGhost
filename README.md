@@ -2,10 +2,14 @@
 
 **Private P2P PyUSD Payments via Telegram & Web**
 
+Made with 🤎 @ ETH Global Online 2025
+
 [![CI](https://github.com/HarryR/LitGhost/actions/workflows/ci.yml/badge.svg)](https://github.com/HarryR/LitGhost/actions/workflows/ci.yml)
 [![Deploy](https://github.com/HarryR/LitGhost/actions/workflows/deploy.yml/badge.svg)](https://github.com/HarryR/LitGhost/actions/workflows/deploy.yml)
 
-[![Built with Lit Protocol](https://img.shields.io/badge/Built%20with-Lit%20Protocol-blueviolet?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCAiZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDZWMTJDNCA5LjM0IDE2IDIwIDIwIDIwQzIwIDE2LjY4IDE2IDYgMTIgMloiIGZpbGw9IndoaXRlIi8+PC9zdmc+)](https://litprotocol.com)
+[![Lit Protocol](https://img.shields.io/badge/Lit%20Protocol-TEE%2FPKP-blueviolet?style=flat)](https://litprotocol.com)
+[![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?style=flat&logo=solidity&logoColor=white)](https://soliditylang.org/)
+[![Hardhat](https://img.shields.io/badge/Hardhat-2.x-yellow?style=flat&logo=hardhat&logoColor=white)](https://hardhat.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-10.x-yellow?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-green?style=flat&logo=vue.js&logoColor=white)](https://vuejs.org/)
