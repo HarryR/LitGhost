@@ -1,23 +1,24 @@
-# LitGhost - Private P2P PyUSD Payments via Telegram & Web
+# 🔥👻 Lit Ghost
 
-<center>
-
-![](lg-icon.png)
+**Private P2P PyUSD Payments via Telegram & Web**
 
 [![CI](https://github.com/HarryR/LitGhost/actions/workflows/ci.yml/badge.svg)](https://github.com/HarryR/LitGhost/actions/workflows/ci.yml)
 [![Deploy](https://github.com/HarryR/LitGhost/actions/workflows/deploy.yml/badge.svg)](https://github.com/HarryR/LitGhost/actions/workflows/deploy.yml)
 
-[![Built with Lit Protocol](https://img.shields.io/badge/Built%20with-Lit%20Protocol-blueviolet?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDZWMTJDNCA5LjM0IDE2IDIwIDIwIDIwQzIwIDE2LjY4IDE2IDYgMTIgMloiIGZpbGw9IndoaXRlIi8+PC9zdmc+)](https://litprotocol.com)
+[![Built with Lit Protocol](https://img.shields.io/badge/Built%20with-Lit%20Protocol-blueviolet?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCAiZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDZWMTJDNCA5LjM0IDE2IDIwIDIwIDIwQzIwIDE2LjY4IDE2IDYgMTIgMloiIGZpbGw9IndoaXRlIi8+PC9zdmc+)](https://litprotocol.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-10.x-yellow?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-green?style=flat&logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.x-purple?style=flat&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![ethers.js](https://img.shields.io/badge/ethers.js-5.x-blue?style=flat)](https://docs.ethers.org/)
+[![ethers.js](https://img.shields.io/badge/ethers.js-5.x-blue?style=flat)](https://docs.ethers.org/v5/)
 
-</center>
+---
 
-> "PayPal built their business on transaction privacy. When you buy coffee with PayPal, the barista doesn't see your entire financial history. But PYUSD on-chain exposes everything. We're bringing PayPal's privacy to blockchain by letting anyone receive PYUSD privately via Telegram - no wallet address doxxing, no transaction graph analysis, just payments that work like people expect."
+When you pay with PayPal, privacy is just... normal. The barista doesn't see your transaction history, your balance, or where else you've spent money. But PYUSD on-chain? Everything is public! Every transaction, every balance, your entire financial graph exposed forever. With Lit Ghost we're making on-chain transactions with PayPal 'normal again'.
 
+**Telegram has 900M+ users.** No app to install, no browser plugin, no MetaMask tutorial. Just send PYUSD to `@alice` and when they open the bot, they're onboarded instantly. Gasless deposits (ERC-3009), gasless transfers, gasless withdrawals - the PKP pays all gas. Your grandmother could use this. That's the point.
+
+**Powering this is Lit Protocol's distributed TEE network.** The system is controlled by a Programmable Key Pair (PKP) locked to immutable code on IPFS - no humans, no multisigs, no upgrade keys. User balances are encrypted on-chain in "leaves" (6 users per leaf), and every transaction updates 3 decoy leaves for privacy. The result: better anonymity than Monero (1/24 vs 1/16), trustless operation, and the UX people expect from digital payments.
 
 ## How It Works
 
