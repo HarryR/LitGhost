@@ -10,7 +10,7 @@ function inlineCss(): Plugin {
   return {
     name: 'inline-css',
     enforce: 'post',
-    generateBundle(_options, bundle) {
+    async generateBundle(_options, bundle) {
       const htmlFiles = Object.keys(bundle).filter(i => i.endsWith('.html'));
       const cssFiles = Object.keys(bundle).filter(i => i.endsWith('.css'));
 
@@ -47,11 +47,12 @@ function inlineCss(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [
     vue(),
     tailwindcss(),
-    inlineCss(),
     sri(),
+    inlineCss(),
     visualizer({
       filename: 'stats.html',      // Default tree map
       gzipSize: true,
