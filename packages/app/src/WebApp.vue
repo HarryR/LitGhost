@@ -4,6 +4,7 @@ import { useWallet } from './composables/useWallet'
 import { useTokenBalance } from './composables/useTokenBalance'
 import { useGhostClient } from './composables/useGhostClient'
 import { useSecretImport } from './composables/useSecretImport'
+import { usePkpGas } from './composables/usePkpGas'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +28,7 @@ import { LitGhost } from '@monorepo/core';
 import TransferWidget from './components/TransferWidget.vue';
 import PrivateBalanceManager from './components/PrivateBalanceManager.vue';
 import { JsonRpcProvider } from '@ethersproject/providers';
+import bootstrapData from '../../lit-action/bootstrap-development.json';
 
 const { address, chainId, connected, connecting, connect, switchChain, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
 
@@ -181,6 +183,81 @@ function doSwitchToCorrectNetwork() {
 const correctChainName = import.meta.env.VITE_CHAIN;
 
 const isCorrectNetwork = () => chainId.value === expectedChainId;
+
+// PKP Gas Management
+const {
+  pkpBalance,
+  pkpBalanceLoading,
+  totalGasNeeded,
+  needsTopUp,
+  canAffordTopUp,
+  transactionsRemaining,
+  formatEthBalance,
+  topUpGas,
+  NUM_TRANSACTIONS
+} = usePkpGas({
+  pkpAddress: bootstrapData.pkp.ethAddress,
+  provider,
+  signer,
+  chainId,
+  expectedChainId
+});
+
+// Gas top-up state management
+type GasTopUpState = 'idle' | 'processing' | 'success' | 'error';
+const gasTopUpState = ref<GasTopUpState>('idle');
+const gasTopUpTxHash = ref<string | null>(null);
+const gasTopUpError = ref<string>('');
+
+// Handle gas top-up
+async function handleTopUpGas() {
+  gasTopUpState.value = 'processing';
+  gasTopUpTxHash.value = null;
+  gasTopUpError.value = '';
+
+  const result = await topUpGas();
+
+  if (result.success) {
+    gasTopUpTxHash.value = result.txHash || null;
+    gasTopUpState.value = 'success';
+    // Auto-reset after 5 seconds
+    setTimeout(() => {
+      gasTopUpState.value = 'idle';
+      gasTopUpTxHash.value = null;
+    }, 5000);
+  } else if (result.cancelled) {
+    // User cancelled the transaction - reset to idle
+    console.log('User cancelled gas top-up');
+    gasTopUpState.value = 'idle';
+  } else {
+    gasTopUpError.value = result.error || 'Failed to top up gas';
+    gasTopUpState.value = 'error';
+  }
+}
+
+// Reset gas top-up state
+function resetGasTopUpState() {
+  gasTopUpState.value = 'idle';
+  gasTopUpTxHash.value = null;
+  gasTopUpError.value = '';
+}
+
+// Block explorer URL for gas top-up tx
+const gasTopUpExplorerUrl = computed(() => {
+  const baseUrl = import.meta.env.VITE_BLOCK_EXPLORER || 'https://etherscan.io';
+  return gasTopUpTxHash.value ? `${baseUrl}/tx/${gasTopUpTxHash.value}` : '';
+});
+
+// Copy transaction hash to clipboard
+async function copyGasTxHash() {
+  if (!gasTopUpTxHash.value) return;
+
+  try {
+    await navigator.clipboard.writeText(gasTopUpTxHash.value);
+  } catch (err) {
+    console.error('Failed to copy:', err);
+  }
+}
 
 // Truncate address for display
 const truncatedAddress = computed(() => {
@@ -407,12 +484,6 @@ const connectionStatus = computed(() => {
             </AccordionTrigger>
             <AccordionContent>
               <div class="space-y-4 pt-2">
-                <div class="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-4">
-                  <p class="text-sm text-emerald-700 dark:text-emerald-400 font-medium">
-                    ✓ LitGhost secret imported successfully
-                  </p>
-                </div>
-
                 <Button
                   @click="handleLogout"
                   variant="outline"
@@ -424,6 +495,146 @@ const connectionStatus = computed(() => {
                 <p class="text-xs text-muted-foreground text-center">
                   Your secret is only stored in memory and will be cleared when you close this tab.
                 </p>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
+
+      <!-- Gas Top-Up Accordion (only when connected and on correct network) -->
+      <div v-if="connected && isCorrectNetwork()">
+        <Accordion type="single" collapsible class="w-full">
+          <AccordionItem value="gas">
+            <AccordionTrigger class="text-left">
+              <div class="flex items-center justify-between w-full pr-4">
+                <span class="font-medium">⛽ Top Up Bot Gas</span>
+                <Badge
+                  :variant="needsTopUp ? 'destructive' : 'outline'"
+                  :class="needsTopUp ? 'bg-red-500/10 border-red-500 text-red-500' : ''"
+                  class="ml-2"
+                >
+                  {{ needsTopUp ? 'Low Gas!' : `${transactionsRemaining} tx left` }}
+                </Badge>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div class="space-y-4 pt-2">
+                <!-- PKP Balance Info -->
+                <div class="bg-muted rounded-md p-4 space-y-2">
+                  <div class="flex justify-between text-sm">
+                    <span class="text-muted-foreground">Bot Balance:</span>
+                    <span class="font-mono">{{ formatEthBalance(pkpBalance) }} ETH</span>
+                  </div>
+                  <div class="flex justify-between text-sm">
+                    <span class="text-muted-foreground">Transactions Remaining:</span>
+                    <span :class="transactionsRemaining < 20 ? 'text-orange-500 font-semibold' : ''">
+                      ~{{ transactionsRemaining }}
+                    </span>
+                  </div>
+                  <div class="flex justify-between text-sm">
+                    <span class="text-muted-foreground">Top-up Amount:</span>
+                    <span class="font-mono">{{ formatEthBalance(totalGasNeeded) }} ETH ({{ NUM_TRANSACTIONS }} tx)</span>
+                  </div>
+                </div>
+
+                <!-- Processing State -->
+                <div v-if="gasTopUpState === 'processing'" class="bg-muted rounded-md p-4 text-center">
+                  <div class="w-12 h-12 mx-auto mb-3 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  <p class="text-sm font-medium">Waiting for confirmation...</p>
+                  <p class="text-xs text-muted-foreground mt-1">Please confirm the transaction in your wallet</p>
+                </div>
+
+                <!-- Success State -->
+                <div v-else-if="gasTopUpState === 'success'" class="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-4">
+                  <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 flex-shrink-0 bg-emerald-500/20 rounded-full flex items-center justify-center text-xl">
+                      ✓
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-semibold text-emerald-700 dark:text-emerald-400 mb-2">
+                        Top-up Complete!
+                      </p>
+                      <div v-if="gasTopUpTxHash" class="flex items-center gap-2">
+                        <p class="text-xs font-mono text-muted-foreground truncate flex-1">{{ gasTopUpTxHash }}</p>
+                        <Button
+                          @click="copyGasTxHash"
+                          variant="ghost"
+                          size="sm"
+                          class="h-7 px-2 flex-shrink-0"
+                          title="Copy transaction hash"
+                        >
+                          📋
+                        </Button>
+                        <a
+                          v-if="gasTopUpExplorerUrl"
+                          :href="gasTopUpExplorerUrl"
+                          target="_blank"
+                          class="inline-flex items-center justify-center h-7 px-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground flex-shrink-0"
+                          title="View on explorer"
+                        >
+                          ↗
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Error State -->
+                <div v-else-if="gasTopUpState === 'error'" class="bg-red-500/10 border border-red-500/50 rounded-lg p-4">
+                  <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 flex-shrink-0 bg-red-500/20 rounded-full flex items-center justify-center text-xl">
+                      ❌
+                    </div>
+                    <div class="flex-1">
+                      <p class="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">
+                        Top-up Failed
+                      </p>
+                      <p class="text-xs text-red-600 dark:text-red-300">{{ gasTopUpError }}</p>
+                      <Button
+                        @click="resetGasTopUpState"
+                        variant="ghost"
+                        size="sm"
+                        class="mt-2 h-7 px-3 text-xs"
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Idle State: Warnings and Button -->
+                <template v-else>
+                  <!-- Warning if low gas -->
+                  <div v-if="needsTopUp" class="bg-red-500/10 border border-red-500/50 rounded-lg p-4">
+                    <p class="text-sm text-red-700 dark:text-red-400 font-medium">
+                      ⚠️ The bot is running low on gas! Please top up to keep it running smoothly.
+                    </p>
+                  </div>
+
+                  <!-- Warning if can't afford -->
+                  <div v-if="needsTopUp && !canAffordTopUp" class="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4">
+                    <p class="text-sm text-yellow-700 dark:text-yellow-400">
+                      You don't have enough ETH in your wallet to top up the bot. Please add more ETH to your wallet.
+                    </p>
+                  </div>
+
+                  <!-- Top Up Button -->
+                  <Button
+                    @click="handleTopUpGas"
+                    :disabled="pkpBalanceLoading || !canAffordTopUp"
+                    :variant="needsTopUp ? 'default' : 'outline'"
+                    class="w-full"
+                    size="lg"
+                  >
+                    <span v-if="pkpBalanceLoading">Loading...</span>
+                    <span v-else-if="needsTopUp">🚨 Top Up Gas Now</span>
+                    <span v-else>🤝 Be Kind, Top Up Gas</span>
+                  </Button>
+
+                  <p class="text-xs text-muted-foreground text-center">
+                    The bot pays gas for all Lit Action executions. Top ups help keep the demo running!
+                  </p>
+                </template>
               </div>
             </AccordionContent>
           </AccordionItem>
