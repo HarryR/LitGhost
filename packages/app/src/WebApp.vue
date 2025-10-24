@@ -71,6 +71,17 @@ const {
   status: gcStatus
 } = useGhostClient({ debug: true });
 
+async function fetchTeePublicKey() {
+  try {
+    const entropy = await litGhostContractReadOnly.getEntropy();
+    teePublicKey.value = entropy.teeEncPublicKey;
+  } catch (error) {
+    console.error('Failed to fetch TEE public key:', error);
+    errorMessage.value = 'Failed to fetch TEE public key from contract. Make sure the contract is bootstrapped.';
+    showErrorDialog.value = true;
+  }
+}
+
 // Auto-connect to wallet if already authorized
 // Also check URL hash for secret key
 onMounted(() => {
@@ -78,6 +89,8 @@ onMounted(() => {
 
   // Check if there's a secret key in the URL hash and auto-import it
   checkUrlHash();
+
+  fetchTeePublicKey();
 });
 
 // Expected chain ID from environment
@@ -100,27 +113,6 @@ const litGhostContract = computed(() => {
 
 // TEE public key - fetched from contract
 const teePublicKey = ref<string | null>(null);
-
-// Fetch TEE public key when contract becomes available
-watch(litGhostContractReadOnly, async (contract) => {
-  if (contract) {
-    try {
-      const entropy = await contract.getEntropy();
-      teePublicKey.value = entropy.teeEncPublicKey;
-    } catch (error) {
-      console.error('Failed to fetch TEE public key:', error);
-      errorMessage.value = 'Failed to fetch TEE public key from contract. Make sure the contract is bootstrapped.';
-      showErrorDialog.value = true;
-    }
-  } else {
-    teePublicKey.value = null;
-
-    // If we have a signer but no contract, it means wrong network
-    if (signer.value && chainId.value !== expectedChainId) {
-      console.warn(`Contract not available: wrong network (expected ${expectedChainId}, got ${chainId.value})`);
-    }
-  }
-}, { immediate: true });
 
 // Error dialog state
 const showErrorDialog = ref(false);
@@ -420,7 +412,7 @@ const connectionStatus = computed(() => {
       <!-- Transfer Widget - Only visible when contract and ghost client are available -->
       <TransferWidget
         v-if="litGhostContract && gc"
-        :lit-ghost-contract="litGhostContract"
+        :lit-ghost-contract="litGhostContractReadOnly"
         :signer="signer"
         :pyusd-balance="pyusdBalance"
         :token-address="pyusd_token_address"

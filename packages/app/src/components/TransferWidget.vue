@@ -420,11 +420,11 @@ async function handleTransfer() {
             <span class="font-semibold">{{ processedAmount }} PYUSD</span>
           </div>
           <div class="flex justify-between text-sm gap-2">
-            <span class="text-muted-foreground flex-shrink-0">To:</span>
+            <span class="text-muted-foreground shrink-0">To:</span>
             <span class="font-mono text-xs">@{{ processedRecipient }}</span>
           </div>
           <div v-if="depositTxHash" class="flex justify-between text-sm gap-2 pt-2 border-t border-border">
-            <span class="text-muted-foreground flex-shrink-0">Deposit Tx:</span>
+            <span class="text-muted-foreground shrink-0">Deposit Tx:</span>
             <a
               :href="depositExplorerUrl"
               target="_blank"
@@ -434,7 +434,7 @@ async function handleTransfer() {
             </a>
           </div>
           <div v-if="updateTxHash" class="flex justify-between text-sm gap-2">
-            <span class="text-muted-foreground flex-shrink-0">Update Tx:</span>
+            <span class="text-muted-foreground shrink-0">Update Tx:</span>
             <a
               :href="updateExplorerUrl"
               target="_blank"
