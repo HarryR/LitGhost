@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm --filter './packages/*' run dev",
     "build": "pnpm --filter './packages/*' run build",
+    "build:production": "pnpm --filter './packages/*' run build:production",
     "test": "pnpm --filter './packages/*' run test",
     "typecheck": "pnpm --filter @monorepo/core exec tsc --noEmit && pnpm --filter @monorepo/app exec vue-tsc --noEmit",
     "validate": "pnpm --filter @monorepo/onchain build && pnpm --filter @monorepo/core build && pnpm --filter @monorepo/lit-action build && pnpm --filter @monorepo/app build && pnpm test"
