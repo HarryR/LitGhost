@@ -104,11 +104,13 @@ contract LitGhost {
 
     Entropy internal m_entropy;
 
+    bool internal m_initialized;
+
     function setEntropy(Entropy calldata in_entropy)
         public
     {
         // Can only be set once, to initialize it
-        require( m_owner == address(0), "403.1" );
+        require( m_initialized == false, "403.1" );
 
         // Verify the signature matches the entropy data
         bytes32 dataHash = in_entropy.digest;
@@ -129,6 +131,8 @@ contract LitGhost {
         m_entropy = in_entropy;
 
         m_owner = msg.sender;
+
+        m_initialized = true;
     }
 
     function getOwner()

@@ -1,0 +1,45 @@
+{
+  "network": "datil-dev",
+  "mode": "production",
+  "timestamp": "2025-10-24T14:09:01.230Z",
+  "pkp": {
+    "tokenId": "0x3f133829fb175fda3feee63a304148832a2355ef93d3eeb4219284070a8424d1",
+    "publicKey": "04c451c059cd8d8c4011d8e3e79be5804bfe322a74c80e91fdbd8c8f626f6b55033b98cf8f6e39a802223777df152aa94ae74bd1e5c121896fe402e02873144d67",
+    "ethAddress": "0x9C15a17bcf50798d0661bE078E9AeBc6746E8fF0",
+    "mintTxHash": "0x52b1b3d49f3405af0bf9e01f097f78dee4e88cac832b22a31e7e9729b34d7660"
+  },
+  "litAction": {
+    "ipfsCid": "QmQukvMJF1YLQEJgyDJGKdGSrE7azgj4eaXEgUNCK6npob",
+    "size": 67548
+  },
+  "encryptedData": {
+    "ciphertext": "roKqMNagyhYv5ohyQRG6XBkfLIu5hybX6VqecIxipmWObIT6CrUuYJFgtmx+jBKC1Eh7Kszr/e/7VduoYdmWl6JKwRR7LzTkqqS4S97n2H6WAT9qq4FtW4/pCs7OyOH8uiy+UJCyXsGqTprZ7NQUyTumjksVv5G8o2X/kuU++I8s4QF/ojGBvuiX6xnOPzeblwWWrdqNgeG9wVtlGbogi6eb6wPv9q1M+i4SfZL9UExPC/hkBOLn5GXnRk3Iq+xrYx6ZJnUW3ZiGxxHmscsZQN6J4b5s9mRGA2vmZM0DEK9MZSi8CZbUSQI=",
+    "dataHash": "105c6039f276f1015ecee904db79acafbf1f835edea36b8e77adbe072cb73cc9",
+    "signature": {
+      "v": 28,
+      "r": "0x61a6f95a66fa0756489b57a4deddea45f3c4f9761b636b0499fb0e4cf258349c",
+      "s": "0x39190d36c39c63e2647fbb619af60a954eb3ec8a32fd8c092005a152d447d22e"
+    },
+    "accessControlConditions": [
+      {
+        "contractAddress": "",
+        "standardContractType": "",
+        "chain": "ethereum",
+        "method": "",
+        "parameters": [
+          ":currentActionIpfsId"
+        ],
+        "returnValueTest": {
+          "comparator": "=",
+          "value": "QmQukvMJF1YLQEJgyDJGKdGSrE7azgj4eaXEgUNCK6npob"
+        }
+      }
+    ],
+    "teeEncPublicKey": "0xb47d3404cdeae256905fb85a654e6dbee0145f54a2f1aac3674f91b8c8ae7917"
+  },
+  "onchain": {
+    "chain": "sepolia",
+    "litGhostAddress": "0x54ced581ec8019939BA01db897cF61fe0b5766cB",
+    "setEntropyTxHash": "0x7a2e511fb90fcc67c4fd4412d401b395ec2988ea73026670f1f738440a74ac21"
+  }
+}

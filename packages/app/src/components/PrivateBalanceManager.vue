@@ -435,6 +435,125 @@ async function copyTxHash() {
     document.body.removeChild(textArea)
   }
 }
+
+// Create Telegram deep-link to notify recipient
+const telegramNotifyLink = computed(() => {
+  // Only create link for internal transfers (not withdrawals)
+  if (actionType.value !== 'internal' || !processedDestination.value || !processedAmount.value) {
+    return null
+  }
+
+  const username = processedDestination.value.startsWith('@')
+    ? processedDestination.value.slice(1)
+    : processedDestination.value
+
+  const message = `I sent you ${processedAmount.value} PYUSD with @LitGhostBot`
+
+  // URL encode the message
+  const encodedMessage = encodeURIComponent(message)
+
+  return `https://t.me/${username}?text=${encodedMessage}`
+})
+
+// Detect if we're running in Telegram
+const isInTelegram = computed(() => {
+  return typeof window !== 'undefined' && window.Telegram?.WebApp?.initData
+})
+
+// QR Code Scanner for Telegram usernames
+async function scanQRCodeForUsername() {
+  if (!isInTelegram.value) {
+    console.error('QR scanner only available in Telegram')
+    return
+  }
+
+  try {
+    window.Telegram.WebApp.showScanQrPopup(
+      {
+        text: 'Scan a Telegram username QR code'
+      },
+      (scannedData: string) => {
+        if (scannedData) {
+          // The scanned data might be a URL like t.me/username or just @username or username
+          let extractedUsername = scannedData
+
+          // Handle t.me/username format
+          if (scannedData.includes('t.me/')) {
+            const match = scannedData.match(/t\.me\/([a-zA-Z0-9_]+)/)
+            if (match && match[1]) {
+              extractedUsername = match[1]
+            }
+          }
+          // Handle @username format
+          else if (scannedData.startsWith('@')) {
+            extractedUsername = scannedData.slice(1)
+          }
+
+          // Set the username field
+          username.value = extractedUsername
+
+          // Close the scanner
+          window.Telegram.WebApp.closeScanQrPopup()
+          return true // Return true to close the popup
+        }
+        return false // Keep the popup open if no data
+      }
+    )
+  } catch (err) {
+    console.error('Failed to open QR scanner:', err)
+  }
+}
+
+// QR Code Scanner for Ethereum addresses
+async function scanQRCodeForAddress() {
+  if (!isInTelegram.value) {
+    console.error('QR scanner only available in Telegram')
+    return
+  }
+
+  try {
+    window.Telegram.WebApp.showScanQrPopup(
+      {
+        text: 'Scan an Ethereum address QR code'
+      },
+      (scannedData: string) => {
+        if (scannedData) {
+          // The scanned data might be just an address or an ethereum: URI
+          let extractedAddress = scannedData
+
+          // Handle ethereum:0x... format
+          if (scannedData.toLowerCase().startsWith('ethereum:')) {
+            const match = scannedData.match(/ethereum:(0x[a-fA-F0-9]{40})/i)
+            if (match && match[1]) {
+              extractedAddress = match[1]
+            }
+          }
+          // Validate it looks like an Ethereum address (0x followed by 40 hex chars)
+          else if (/^0x[a-fA-F0-9]{40}$/i.test(scannedData)) {
+            extractedAddress = scannedData
+          }
+          // Try to extract address if it's embedded in a longer string
+          else {
+            const match = scannedData.match(/(0x[a-fA-F0-9]{40})/i)
+            if (match && match[1]) {
+              extractedAddress = match[1]
+            }
+          }
+
+          // Set the address field
+          withdrawAddress.value = extractedAddress
+
+          // Close the scanner
+          window.Telegram.WebApp.closeScanQrPopup()
+          return true // Return true to close the popup
+        }
+        return false // Keep the popup open if no data
+      }
+    )
+  } catch (err) {
+    console.error('Failed to open QR scanner:', err)
+  }
+}
 </script>
 
 <template>
@@ -489,20 +608,52 @@ async function copyTxHash() {
             </div>
 
             <!-- Destination Input (conditional based on type) -->
-            <TelegramUsernameInput
-              v-if="actionType === 'internal'"
-              ref="usernameInputRef"
-              v-model="username"
-              label="To Username"
-              :required="true"
-            />
-            <EthereumAddressInput
-              v-else
-              ref="addressInputRef"
-              v-model="withdrawAddress"
-              label="To Address"
-              :required="true"
-            />
+            <div v-if="actionType === 'internal'">
+              <div class="flex gap-2 items-end">
+                <div class="flex-1">
+                  <TelegramUsernameInput
+                    ref="usernameInputRef"
+                    v-model="username"
+                    label="To Username"
+                    :required="true"
+                  />
+                </div>
+                <Button
+                  v-if="isInTelegram"
+                  @click="scanQRCodeForUsername"
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  title="Scan QR Code"
+                  class="h-10 w-10 flex-shrink-0"
+                >
+                  <svg fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zm16 0v6h-6V4zm-6 11h2v-2h-2v-2h2v2h2v-2h2v2h-2v2h2v3h-2v2h-2v-2h-3v2h-2v-4h3zm2 0v3h2v-3zM4 20v-6h6v6zM6 6v2h2V6zm10 0v2h2V6zM6 16v2h2v-2zm-2-5h2v2H4zm5 0h4v4h-2v-2H9zm2-5h2v4h-2zM2 2v4H0V2a2 2 0 0 1 2-2h4v2zm20-2a2 2 0 0 1 2 2v4h-2V2h-4V0zM2 18v4h4v2H2a2 2 0 0 1-2-2v-4zm20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2z"/></svg>
+                </Button>
+              </div>
+            </div>
+            <div v-else>
+              <div class="flex gap-2 items-end">
+                <div class="flex-1">
+                  <EthereumAddressInput
+                    ref="addressInputRef"
+                    v-model="withdrawAddress"
+                    label="To Address"
+                    :required="true"
+                  />
+                </div>
+                <Button
+                  v-if="isInTelegram"
+                  @click="scanQRCodeForAddress"
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  title="Scan QR Code"
+                  class="h-10 w-10 flex-shrink-0"
+                >
+                  <svg fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zm16 0v6h-6V4zm-6 11h2v-2h-2v-2h2v2h2v-2h2v2h-2v2h2v3h-2v2h-2v-2h-3v2h-2v-4h3zm2 0v3h2v-3zM4 20v-6h6v6zM6 6v2h2V6zm10 0v2h2V6zM6 16v2h2v-2zm-2-5h2v2H4zm5 0h4v4h-2v-2H9zm2-5h2v4h-2zM2 2v4H0V2a2 2 0 0 1 2-2h4v2zm20-2a2 2 0 0 1 2 2v4h-2V2h-4V0zM2 18v4h4v2H2a2 2 0 0 1-2-2v-4zm20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2z"/></svg>
+                </Button>
+              </div>
+            </div>
 
             <!-- Amount Input -->
             <AmountInput
@@ -595,6 +746,18 @@ async function copyTxHash() {
                 <span class="font-semibold">{{ newBalance }} PYUSD</span>
               </div>
             </div>
+
+            <!-- Notify recipient button (only for internal transfers) -->
+            <a
+              v-if="telegramNotifyLink"
+              :href="telegramNotifyLink"
+              target="_blank"
+              class="block"
+            >
+              <Button variant="default" class="w-full">
+                💬 Notify @{{ processedDestination }}
+              </Button>
+            </a>
 
             <Button @click="resetToForm" variant="outline" class="w-full">
               Send Another

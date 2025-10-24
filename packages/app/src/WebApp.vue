@@ -378,6 +378,14 @@ const connectionStatus = computed(() => {
                 </Button>
               </div>
               <p class="text-2xl font-bold">{{ formattedBalance }} <span class="text-sm font-normal text-muted-foreground">PYUSD</span></p>
+              <a
+                href="https://faucet.paxos.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-1"
+              >
+                Get testnet PYUSD ↗
+              </a>
             </div>
           </div>
 
@@ -630,10 +638,6 @@ const connectionStatus = computed(() => {
                     <span v-else-if="needsTopUp">🚨 Top Up Gas Now</span>
                     <span v-else>🤝 Be Kind, Top Up Gas</span>
                   </Button>
-
-                  <p class="text-xs text-muted-foreground text-center">
-                    The bot pays gas for all Lit Action executions. Top ups help keep the demo running!
-                  </p>
                 </template>
               </div>
             </AccordionContent>

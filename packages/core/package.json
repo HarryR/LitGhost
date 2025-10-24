@@ -20,7 +20,9 @@
   ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && vite build --mode sandboxed && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build": "pnpm build:development",
+    "build:development": "vite build && vite build --mode sandboxed && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build:production": "pnpm build",
     "typecheck": "pnpm build",
     "test": "vitest run"
   },

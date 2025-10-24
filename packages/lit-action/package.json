@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "vite build --watch --mode development",
     "dev:server": "tsx src/test-server/index.ts",
-    "build": "pnpm clean && pnpm build:dev && pnpm build:prod",
-    "build:dev": "vite build --mode development",
-    "build:prod": "vite build --mode production",
+    "build": "pnpm clean && pnpm build:development && pnpm build:production",
+    "build:development": "vite build --mode development",
+    "build:production": "vite build --mode production",
     "test": "vitest --run",
     "test:ui": "vitest --ui",
     "clean": "rm -rf dist",
-    "bootstrap": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode development --output bootstrap-development.json --debug"
+    "bootstrap:development": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode development --output bootstrap-development.json --debug",
+    "bootstrap:production": "pnpm build && tsx scripts/bootstrap.ts --network datil-dev --mode production --output bootstrap-production.json --debug"
   },
   "devDependencies": {
     "@lit-protocol/auth-helpers": "7.3.0",

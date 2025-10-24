@@ -50,7 +50,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm build
+        run: pnpm build:production
         env:
           HARDHAT_VAR_SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
           HARDHAT_VAR_PROJECT_KEY_TEST: ${{ secrets.PROJECT_KEY_TEST }}

@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build --mode development",
+    "build": "pnpm build:development",
+    "build:development": "vue-tsc && vite build --mode development",
+    "build:production": "vue-tsc && vite build --mode production",
     "preview": "vite preview --port 5173",
     "test": "vitest",
     "test:ui": "vitest --ui",

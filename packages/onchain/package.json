@@ -17,8 +17,11 @@
   "scripts": {
     "compile": "hardhat compile",
     "build": "hardhat compile",
+    "build:development": "pnpm build",
+    "build:production": "pnpm build",
     "test": "hardhat test",
-    "deploy:sepolia": "hardhat --network sepolia deploy --verify --mode development"
+    "deploy:development": "hardhat --network sepolia deploy --verify --mode development",
+    "deploy:production": "hardhat --network sepolia deploy --verify --mode production"
   },
   "dependencies": {
     "@monorepo/core": "workspace:*",
