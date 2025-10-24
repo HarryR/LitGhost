@@ -50,10 +50,14 @@ const errorMessage = computed(() => {
 })
 
 // Expose cleanedValue and isValid for parent components to access via ref
-// Exposed computed refs are automatically unwrapped by Vue
+// We expose the .value to unwrap the computed refs
 defineExpose({
-  cleanedValue,
-  isValid
+  get cleanedValue() {
+    return cleanedValue.value
+  },
+  get isValid() {
+    return isValid.value
+  }
 })
 </script>
 

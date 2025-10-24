@@ -57,10 +57,14 @@ const isValid = computed(() => {
 })
 
 // Expose parsedValue and isValid for parent components to access via ref
-// Exposed computed refs are automatically unwrapped by Vue
+// We expose the .value to unwrap the computed refs
 defineExpose({
-  parsedValue,
-  isValid
+  get parsedValue() {
+    return parsedValue.value
+  },
+  get isValid() {
+    return isValid.value
+  }
 })
 
 const errorMessage = computed(() => {
