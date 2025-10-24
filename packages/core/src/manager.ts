@@ -248,7 +248,7 @@ export class ManagerContext {
    * Consider caching results when processing the same user multiple times.
    */
   getUserKeypair(telegramUsername: string): SigningKey {
-    return deriveUserKeypair(telegramUsername, this.teeMasterKey, NAMESPACE_USER_KEYPAIR);
+    return deriveUserKeypair(telegramUsername.toLowerCase(), this.teeMasterKey, NAMESPACE_USER_KEYPAIR);
   }
 
   /**

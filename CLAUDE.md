@@ -1,34 +1,40 @@
 # Project Context for Claude
 
-This is a pnpm monorepo workspace for a Telegram Mini App with on-chain components and cryptographic functionality.
+This is a pnpm monorepo workspace for Lit Ghost - a privacy-preserving payment system with both web app and Telegram Mini App interfaces.
 
 ## Workspace Structure
 
 ```
 packages/
-├── app/          # Telegram Mini App (Vue 3 + Vite + TypeScript)
+├── app/          # Web App + Telegram Mini App (Vue 3 + Vite + TypeScript)
 ├── core/         # Shared cryptographic library (TypeScript + Vite)
+├── lit-action/   # Lit Protocol action code (TypeScript + Vite)
 └── onchain/      # Smart contracts (Hardhat + Solidity)
 ```
 
 ### Package: `@monorepo/app`
-- **Purpose**: Telegram Mini App frontend
+- **Purpose**: Dual-mode frontend application (Web App + Telegram Mini App)
 - **Stack**: Vue 3, Vite, TypeScript, Vitest
 - **Build**: `vue-tsc && vite build`
 - **Test**: `vitest`
 - **Type Check**: Use `vue-tsc --noEmit` (NOT plain `tsc`)
+- **Architecture**: Single codebase that conditionally loads:
+  - `WebApp.vue` for web browser access
+  - `TelegramMiniApp.vue` when running in Telegram context
+- **Detection**: Uses `detectTg()` in `main.ts` to determine runtime environment
 
 ### Package: `@monorepo/core`
 - **Purpose**: Shared cryptographic and utility functions
 - **Stack**: TypeScript, Vite (bundler), Vitest
-- **Build**: `vite build && tsc --emitDeclarationOnly`
-- **Dependencies**: `@noble/ed25519` v3, `@noble/hashes`, `@ethersproject/*` v5
-- **Important**: ed25519 v3 requires SHA-512 polyfill set in `utils.ts`:
-  ```ts
-  import { sha512 } from '@noble/hashes/sha2.js';
-  ed25519.hashes.sha512 = sha512;
-  ed25519.hashes.sha512Async = (m: Uint8Array) => Promise.resolve(sha512(m));
-  ```
+- **Build**: Dual-mode build system
+  - `pnpm build:development`: Creates both standard and sandboxed bundles
+  - Standard build: `vite build` → `dist/index.js`
+  - Sandboxed build: `vite build --mode sandboxed` → `dist/sandboxed.js`
+  - Type declarations: `tsc --emitDeclarationOnly --declaration --outDir dist`
+- **Dependencies**: `@noble/ed25519` v3, `@ethersproject/*` v5
+- **Exports**: Two build modes via package.json exports:
+  - `.` → `dist/index.js` (standard build with external deps)
+  - `./sandboxed` → `dist/sandboxed.js` (for Lit Protocol TEE environment)
 
 ### Package: `@monorepo/onchain` (in `packages/onchain/`)
 - **Purpose**: Solidity smart contracts and tests
@@ -57,14 +63,14 @@ packages/
 
 ## Cryptography Implementation
 
-The project implements a privacy-preserving deposit system using ed25519 ECDH:
+The project implements a privacy-preserving payment system using secp256k1 ECDH:
 
 1. **User ID Blinding**: XOR-based blinding with ECDH shared secrets
 2. **Balance Encryption**: XOR encryption with namespaced keys
 3. **Leaf Structure**: Groups of 6 encrypted balances with nonces
 4. **Transcript Hashing**: Deterministic hash chain for state updates
 
-**Critical**: The TypeScript implementation in `packages/core/` must match the Solidity implementation in `packages/onchain/contracts/Dorp.sol`. The test suite validates this compatibility.
+**Critical**: The TypeScript implementation in `packages/core/` must match the Solidity implementation in `packages/onchain/contracts/LitGhost.sol`. The test suite validates this compatibility.
 
 ## Common Commands
 
@@ -98,8 +104,8 @@ pnpm dlx shadcn-vue@latest add card button badge separator
    - `onchain`: CommonJS (`"type": "commonjs"` for Hardhat compatibility)
 
 2. **Workspace Dependencies**:
-   - `onchain` depends on `core` via `"@monorepo/core": "workspace:*"`
-   - Must build `core` before running `onchain` tests
+   - `onchain`, `app`, and `lit-action` depend on `core` via `"@monorepo/core": "workspace:*"`
+   - Must build `core` before building other packages or running tests
 
 3. **Type Declarations**:
    - `core` generates `.d.ts` files to `dist/` for consumption by other packages
@@ -114,7 +120,8 @@ pnpm dlx shadcn-vue@latest add card button badge separator
 5. **Hardhat Tests**:
    - Located in `packages/onchain/test/`
    - Use `computeTranscript` from `@monorepo/core` for transcript calculation
-   - MockToken implements ERC20, ERC2612 (permit), and ERC3009 (transferWithAuthorization)
+   - MockToken implements ERC20 and ERC3009 (transferWithAuthorization)
+   - ERC3009 support enables gasless deposits for PyUSD and USDC compatibility
 
 ## Development Workflow
 

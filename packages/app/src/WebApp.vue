@@ -102,7 +102,7 @@ const litGhostContract = computed(() => {
 const teePublicKey = ref<string | null>(null);
 
 // Fetch TEE public key when contract becomes available
-watch(litGhostContract, async (contract) => {
+watch(litGhostContractReadOnly, async (contract) => {
   if (contract) {
     try {
       const entropy = await contract.getEntropy();
@@ -555,7 +555,7 @@ const connectionStatus = computed(() => {
                 <!-- Success State -->
                 <div v-else-if="gasTopUpState === 'success'" class="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-4">
                   <div class="flex items-start gap-3">
-                    <div class="w-10 h-10 flex-shrink-0 bg-emerald-500/20 rounded-full flex items-center justify-center text-xl">
+                    <div class="w-10 h-10 shrink-0 bg-emerald-500/20 rounded-full flex items-center justify-center text-xl">
                       ✓
                     </div>
                     <div class="flex-1 min-w-0">
@@ -568,7 +568,7 @@ const connectionStatus = computed(() => {
                           @click="copyGasTxHash"
                           variant="ghost"
                           size="sm"
-                          class="h-7 px-2 flex-shrink-0"
+                          class="h-7 px-2 shrink-0"
                           title="Copy transaction hash"
                         >
                           📋
@@ -577,7 +577,7 @@ const connectionStatus = computed(() => {
                           v-if="gasTopUpExplorerUrl"
                           :href="gasTopUpExplorerUrl"
                           target="_blank"
-                          class="inline-flex items-center justify-center h-7 px-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground flex-shrink-0"
+                          class="inline-flex items-center justify-center h-7 px-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground shrink-0"
                           title="View on explorer"
                         >
                           ↗
@@ -590,7 +590,7 @@ const connectionStatus = computed(() => {
                 <!-- Error State -->
                 <div v-else-if="gasTopUpState === 'error'" class="bg-red-500/10 border border-red-500/50 rounded-lg p-4">
                   <div class="flex items-start gap-3">
-                    <div class="w-10 h-10 flex-shrink-0 bg-red-500/20 rounded-full flex items-center justify-center text-xl">
+                    <div class="w-10 h-10 shrink-0 bg-red-500/20 rounded-full flex items-center justify-center text-xl">
                       ❌
                     </div>
                     <div class="flex-1">

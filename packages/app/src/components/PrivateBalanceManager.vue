@@ -625,7 +625,7 @@ async function scanQRCodeForAddress() {
                   size="icon"
                   type="button"
                   title="Scan QR Code"
-                  class="h-10 w-10 flex-shrink-0"
+                  class="h-10 w-10 shrink-0"
                 >
                   <svg fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zm16 0v6h-6V4zm-6 11h2v-2h-2v-2h2v2h2v-2h2v2h-2v2h2v3h-2v2h-2v-2h-3v2h-2v-4h3zm2 0v3h2v-3zM4 20v-6h6v6zM6 6v2h2V6zm10 0v2h2V6zM6 16v2h2v-2zm-2-5h2v2H4zm5 0h4v4h-2v-2H9zm2-5h2v4h-2zM2 2v4H0V2a2 2 0 0 1 2-2h4v2zm20-2a2 2 0 0 1 2 2v4h-2V2h-4V0zM2 18v4h4v2H2a2 2 0 0 1-2-2v-4zm20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2z"/></svg>
                 </Button>
@@ -648,7 +648,7 @@ async function scanQRCodeForAddress() {
                   size="icon"
                   type="button"
                   title="Scan QR Code"
-                  class="h-10 w-10 flex-shrink-0"
+                  class="h-10 w-10 shrink-0"
                 >
                   <svg fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zm16 0v6h-6V4zm-6 11h2v-2h-2v-2h2v2h2v-2h2v2h-2v2h2v3h-2v2h-2v-2h-3v2h-2v-4h3zm2 0v3h2v-3zM4 20v-6h6v6zM6 6v2h2V6zm10 0v2h2V6zM6 16v2h2v-2zm-2-5h2v2H4zm5 0h4v4h-2v-2H9zm2-5h2v4h-2zM2 2v4H0V2a2 2 0 0 1 2-2h4v2zm20-2a2 2 0 0 1 2 2v4h-2V2h-4V0zM2 18v4h4v2H2a2 2 0 0 1-2-2v-4zm20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2z"/></svg>
                 </Button>
@@ -728,11 +728,11 @@ async function scanQRCodeForAddress() {
                 <span class="font-semibold">{{ processedAmount }} PYUSD</span>
               </div>
               <div class="flex justify-between text-sm gap-2">
-                <span class="text-muted-foreground flex-shrink-0">To:</span>
+                <span class="text-muted-foreground shrink-0">To:</span>
                 <span class="font-mono text-xs truncate">{{ processedDestination }}</span>
               </div>
               <div class="flex justify-between text-sm gap-2">
-                <span class="text-muted-foreground flex-shrink-0">Transaction:</span>
+                <span class="text-muted-foreground shrink-0">Transaction:</span>
                 <a
                   :href="blockExplorerUrl"
                   target="_blank"
