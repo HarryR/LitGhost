@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useWallet } from './composables/useWallet'
 import { useTokenBalance } from './composables/useTokenBalance'
 import { useGhostClient } from './composables/useGhostClient'
