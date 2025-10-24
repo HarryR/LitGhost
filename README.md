@@ -2,6 +2,8 @@
 
 **Private P2P PyUSD Payments via Telegram & Web**
 
+![telegram-qr.png](telegram-qr.png)
+
 Made with 🤎 @ ETH Global Online 2025
 
 [![CI](https://github.com/HarryR/LitGhost/actions/workflows/ci.yml/badge.svg)](https://github.com/HarryR/LitGhost/actions/workflows/ci.yml)
