@@ -28,7 +28,11 @@ import { LitGhost } from '@monorepo/core';
 import TransferWidget from './components/TransferWidget.vue';
 import PrivateBalanceManager from './components/PrivateBalanceManager.vue';
 import { JsonRpcProvider } from '@ethersproject/providers';
-import bootstrapData from '../../lit-action/bootstrap-development.json';
+import bootstrapDevelopment from '../../lit-action/bootstrap-development.json';
+import bootstrapProduction from '../../lit-action/bootstrap-production.json';
+
+// Select the correct bootstrap data based on the build mode
+const bootstrapData = import.meta.env.MODE === 'production' ? bootstrapProduction : bootstrapDevelopment;
 
 const { address, chainId, connected, connecting, connect, switchChain, provider, signer, availableProviders, getProviders, checkExistingConnection } = useWallet();
 
